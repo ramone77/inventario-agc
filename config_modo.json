@@ -1,0 +1,7 @@
+{
+    "modo_local": false,
+    "db_path_local": "C:\\InventarioApp\\inventario_local.db",
+    "actas_folder_local": "C:\\InventarioApp\\actas_local",
+    "db_path_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp",
+    "actas_folder_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\Actas"
+}
