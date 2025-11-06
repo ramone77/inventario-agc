@@ -1,0 +1,152 @@
+# ============================================
+# ARCHIVOS DE PYTHON
+# ============================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ============================================
+# BASE DE DATOS Y ARCHIVOS DE DATOS
+# ============================================
+
+# Base de datos SQLite
+*.db
+*.sqlite3
+*.db-journal
+*.sqlite3-journal
+
+# Archivos de datos temporales
+*.tmp
+*.temp
+*.log
+
+# Backup files
+*.bak
+*.backup
+
+# ============================================
+# ARCHIVOS DEL SISTEMA OPERATIVO
+# ============================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+
+# ============================================
+# ENTORNOS VIRTUALES Y IDE
+# ============================================
+
+# Virtual environments
+venv/
+env/
+ENV/
+virtualenv/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# PyCharm
+.idea/
+*.iws
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# ============================================
+# ARCHIVOS DE CONFIGURACIÓN TEMPORALES
+# ============================================
+
+# Configuración local (no subir)
+config_local.py
+settings_local.py
+
+# Logs de aplicación
+logs/
+*.log
+
+# Archivos de sesión
+*.session
+*.session.*
+
+# ============================================
+# ARCHIVOS EXCEL TEMPORALES
+# ============================================
+
+# Archivos Excel temporales de exportación
+~$*.xlsx
+*.xlsx.tmp
+
+# ============================================
+# ARCHIVOS DE ACTAS/PDF TEMPORALES
+# ============================================
+
+# Carpeta de actas local (se usa la de configuración)
+actas_local/
+temp_actas/
