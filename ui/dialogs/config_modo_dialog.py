@@ -4,15 +4,71 @@ Configuración de modo LOCAL/RED - VERSIÓN MODULAR
 """
 
 import os
-import sys
+import sys  # ✅ AGREGADO - FALTABA ESTE IMPORT
+import json
+from pathlib import Path
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                            QLabel, QLineEdit, QPushButton, QRadioButton,
-                           QGroupBox, QMessageBox, QDialogButtonBox)
+                           QGroupBox, QMessageBox, QDialogButtonBox, QApplication)
 from PyQt5.QtCore import Qt
 
-# Importar nuestros módulos
-from config.config_manager import cargar_configuracion, guardar_configuracion
-from PyQt5.QtWidgets import QApplication
+
+# ✅ SOLUCIÓN: COPIAR LAS FUNCIONES DIRECTAMENTE EN EL ARCHIVO
+# Para evitar problemas de importación circular
+
+def cargar_configuracion():
+    """Carga la configuración desde archivo JSON - VERSIÓN LOCAL"""
+    config_file = _obtener_ruta_config()
+    
+    # Configuración por defecto
+    CONFIG_DEFAULT = {
+        "modo_local": False,
+        "db_path_local": "C:\\InventarioApp\\inventario_local.db",
+        "actas_folder_local": "C:\\InventarioApp\\actas_local", 
+        "db_path_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\inventario.db",
+        "actas_folder_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\actas"
+    }
+    
+    try:
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                print("✅ Configuración cargada desde archivo")
+                return config
+        else:
+            # Crear archivo con valores por defecto
+            guardar_configuracion(CONFIG_DEFAULT)
+            print("🆕 Archivo de configuración creado con valores por defecto")
+            return CONFIG_DEFAULT
+    except Exception as e:
+        print(f"⚠️ Error cargando configuración: {e}")
+        return CONFIG_DEFAULT
+
+
+def guardar_configuracion(config):
+    """Guarda la configuración en archivo JSON - VERSIÓN LOCAL"""
+    config_file = _obtener_ruta_config()
+    
+    try:
+        # Crear directorio si no existe
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        print("💾 Configuración guardada correctamente")
+        return True
+    except Exception as e:
+        print(f"❌ Error guardando configuración: {e}")
+        return False
+
+
+def _obtener_ruta_config():
+    """Obtiene la ruta del archivo de configuración - VERSIÓN LOCAL"""
+    # Buscar el directorio del proyecto de forma segura
+    current_file = Path(__file__)
+    # Subir 3 niveles: ui/dialogs/ → ui/ → inventario_agc/ → raíz
+    project_root = current_file.parent.parent.parent
+    return project_root / "config_modo.json"
 
 
 class ConfiguracionModoDialog(QDialog):
@@ -92,17 +148,23 @@ class ConfiguracionModoDialog(QDialog):
             "actas_folder_red": self.input_actas_red.text().strip()
         }
         
-        guardar_configuracion(nueva_config)
-        
-        QMessageBox.information(
-            self, 
-            "Configuración Guardada", 
-            "✅ Configuración guardada correctamente.\n\n"
-            "🔄 <b>La aplicación se reiniciará para aplicar los cambios.</b>",
-            QMessageBox.Ok
-        )
-        
-        self.accept()
-        # Reiniciar aplicación
-        QApplication.quit()
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        if guardar_configuracion(nueva_config):
+            QMessageBox.information(
+                self, 
+                "Configuración Guardada", 
+                "✅ Configuración guardada correctamente.\n\n"
+                "🔄 <b>La aplicación se reiniciará para aplicar los cambios.</b>",
+                QMessageBox.Ok
+            )
+            
+            self.accept()
+            # ✅ AHORA SYS ESTÁ DEFINIDO
+            QApplication.quit()
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        else:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "❌ No se pudo guardar la configuración.",
+                QMessageBox.Ok
+            )

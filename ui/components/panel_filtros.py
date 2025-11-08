@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
-
+from database.db_manager import DB  # ✅ NUEVO IMPORT
 
 class PanelFiltrosAvanzados(QWidget):
     """Panel de filtros visibles - DISEÑO COMPACTO HORIZONTAL"""
@@ -16,9 +16,18 @@ class PanelFiltrosAvanzados(QWidget):
     # Señal personalizada para cuando se aplican filtros
     filtros_aplicados = pyqtSignal(dict)
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, db=None):
         super().__init__(parent)
+        self.db = db
+        print(f"🔍 DEBUG PanelFiltros: BD recibida = {self.db is not None}")
+        
         self._setup_ui()
+        
+        if self.db:
+            print("🔍 DEBUG: Llamando a actualizar_tipos_dinamicos...")
+            self.actualizar_tipos_dinamicos()
+        else:
+            print("❌ DEBUG: No hay BD para actualizar tipos")
     
     def _setup_ui(self):
         """Configura la interfaz del panel de filtros - DISEÑO HORIZONTAL COMPACTO"""
@@ -58,7 +67,7 @@ class PanelFiltrosAvanzados(QWidget):
         self.filtro_prd.textChanged.connect(self._aplicar_automaticamente)
         
         self.filtro_tipo = QComboBox()
-        self.filtro_tipo.addItems(["", "Oficina", "Cocina", "Laboratorio", "Celular", "Tablet", "Otro"])
+        #self.filtro_tipo.addItems(["", "Oficina", "Cocina", "Laboratorio", "Celular", "Tablet", "Otro"])
         self.filtro_tipo.currentTextChanged.connect(self._aplicar_automaticamente)
         
         fila_ficha = QHBoxLayout()
@@ -335,6 +344,56 @@ class PanelFiltrosAvanzados(QWidget):
         
         # Emitir señal de filtros limpios
         self.filtros_aplicados.emit({})
+
+    # BORRA el método actualizar_tipos_dinamicos completo
+    # Y PEGA este nuevo con debug:
+
+    def actualizar_tipos_dinamicos(self):
+        """Actualiza SOLO el combobox de tipos con datos reales de la BD - VERSIÓN DEBUG"""
+        try:
+            print("🔄 DEBUG: Ejecutando actualizar_tipos_dinamicos...")
+            
+            if not self.db:
+                print("❌ DEBUG: No hay conexión a BD")
+                return
+                
+            # Obtener bienes para extraer tipos
+            bienes = self.db.list_bienes(limite=1000)
+            print(f"📊 DEBUG: Bienes obtenidos: {len(bienes)}")
+            
+            # Extraer tipos únicos
+            tipos_unicos = set()
+            for i, bien in enumerate(bienes):
+                if hasattr(bien, 'keys'):
+                    bien_dict = dict(bien)
+                else:
+                    bien_dict = bien
+                
+                tipo = str(bien_dict.get('tipo', '')).strip()
+                if i < 5:  # Mostrar solo primeros 5 para no saturar
+                    print(f"🔍 DEBUG: Bien {i} - Tipo: '{tipo}'")
+                if tipo and tipo != 'None' and tipo != '':  # Filtrar vacíos
+                    tipos_unicos.add(tipo)
+            
+            # Ordenar alfabéticamente
+            tipos_ordenados = sorted(list(tipos_unicos))
+            print(f"🎯 DEBUG: Tipos únicos encontrados: {tipos_ordenados}")
+            
+            # Actualizar combobox
+            current_text = self.filtro_tipo.currentText()
+            print(f"🔧 DEBUG: Texto actual en combobox: '{current_text}'")
+            
+            self.filtro_tipo.clear()
+            self.filtro_tipo.addItem("")  # Opción vacía
+            self.filtro_tipo.addItems(tipos_ordenados)
+            
+            print(f"✅ DEBUG: Combobox actualizado con {len(tipos_ordenados)} tipos")
+            print(f"✅ DEBUG: Items en combobox: {[self.filtro_tipo.itemText(i) for i in range(self.filtro_tipo.count())]}")
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Error en actualizar_tipos_dinamicos: {e}")
+            import traceback
+            traceback.print_exc()
         
     def aplicar_filtros(self):
         """Aplica los filtros y emite la señal"""

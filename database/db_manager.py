@@ -421,6 +421,27 @@ class DB:
             print(f"Error al listar bienes: {e}")
             return []
 
+    def list_bienes_completos(self):
+        """Obtiene TODOS los bienes sin límite - PARA FILTROS"""
+        try:
+            cur = self.conn.cursor()
+            query = """
+                SELECT id, ficha, tipo, marca, modelo, serie, estado, prd, 
+                    nombre, apellido, dni_cuit, institucional,
+                    linea, sim, empresa, imei, descripcion, fecha_registro, 
+                    monto_original, anio_prd
+                FROM bienes 
+                ORDER BY fecha_registro DESC
+            """
+            cur.execute(query)
+            resultado = cur.fetchall()
+            cur.close()
+            print(f"✅ Obtenidos {len(resultado)} registros completos para filtros")
+            return resultado
+        except Exception as e:
+            print(f"❌ Error al listar bienes completos: {e}")
+            return []
+
     def buscar_bienes(self, texto, limite=1000):
         """Busca bienes por cualquier campo con límite para rendimiento"""
         cur = self.conn.cursor()

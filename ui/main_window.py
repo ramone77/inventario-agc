@@ -1,12 +1,17 @@
 """
 🎨 VENTANA PRINCIPAL - Sistema de Inventario AGC
-Ventana principal modularizada
+Ventana principal modularizada - VERSIÓN COMPLETAMENTE FUNCIONAL
 """
 
 import os
+import sys
+import pandas as pd
 from datetime import datetime
 
-from PyQt5 import QtWidgets, QtCore
+# ✅ AGREGAR ESTO PARA IMPORTS ABSOLUTOS
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from PyQt5 import QtWidgets, QtCore, QtPrintSupport
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QPushButton, QTableWidget, QTableWidgetItem, QLabel, 
                            QLineEdit, QMessageBox, QTabWidget, QStatusBar,
@@ -14,17 +19,20 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QScrollArea, QCheckBox, QDialog, QTextEdit,
                            QFileDialog, QProgressBar, QRadioButton,
                            QListWidget, QListWidgetItem, QDialogButtonBox)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QDesktopServices, QTextDocument, QTextCursor, QTextCharFormat, QFont
 
-# Importar nuestros módulos
+# ✅ IMPORTS ABSOLUTOS (ahora funcionarán)
 from database.db_manager import DB
-from ui.components.header_filtros import HeaderFiltros
-from ui.components.panel_filtros import PanelFiltrosAvanzados
-from ui.dialogs.bien_dialog import BienDialog
-from ui.dialogs.movimiento_dialog import MovimientoDialog
-from ui.dialogs.config_modo_dialog import ConfiguracionModoDialog
+from core.bien_manager import BienManager
+from utils import excel_handler
+
+# ✅ IMPORTS RELATIVOS (para módulos dentro de ui/)
+from .components.header_filtros import HeaderFiltros
+from .components.panel_filtros import PanelFiltrosAvanzados
+from .dialogs.bien_dialog import BienDialog
+from .dialogs.movimiento_dialog import MovimientoDialog
+from .dialogs.config_modo_dialog import ConfiguracionModoDialog
 
 
 class VentanaPrincipal(QMainWindow):
@@ -32,6 +40,10 @@ class VentanaPrincipal(QMainWindow):
         super().__init__()
         self.db = db
         self.usuario_actual = usuario_actual
+        
+        # Inicializar BienManager
+        self.bien_manager = BienManager(db)
+        #self.excel_handler = ExcelHandler()  # ✅ INICIALIZAR ExcelHandler
         
         # Configuración inicial
         self._inicializar_configuracion()
@@ -179,6 +191,10 @@ class VentanaPrincipal(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.actualizar_status_bar()
+        
+        # Cargar datos iniciales
+        self.cargar_bienes()
+        self.cargar_movimientos()
 
     def _crear_barra_herramientas(self):
         """Crea la barra de herramientas con el selector de modo"""
@@ -219,8 +235,8 @@ class VentanaPrincipal(QMainWindow):
         # 🔍 PANEL DE FILTROS AVANZADOS
         filtros_layout = QVBoxLayout()
 
-        # Crear panel de filtros avanzados
-        self.panel_filtros = PanelFiltrosAvanzados()
+        # Crear panel de filtros avanzados - ✅ ASEGURAR QUE SE PASE self.db
+        self.panel_filtros = PanelFiltrosAvanzados(db=self.db)  # ← CON BD
         self.panel_filtros.filtros_aplicados.connect(self.aplicar_filtros_avanzados)
 
         filtros_layout.addWidget(self.panel_filtros)
@@ -330,6 +346,7 @@ class VentanaPrincipal(QMainWindow):
         
         # Agregar al tabwidget
         self.tabs.addTab(tab, "🔍 Buscar Bienes")
+
     def _crear_tab_movimientos(self):
         """Crea la pestaña de movimientos"""
         tab = QWidget()
@@ -484,6 +501,7 @@ class VentanaPrincipal(QMainWindow):
         layout.addWidget(label_valor)
         
         return container
+
     # ========== MÉTODOS PRINCIPALES ==========
 
     def configurar_columnas_tabla(self):
@@ -658,23 +676,70 @@ class VentanaPrincipal(QMainWindow):
                 self.cargar_bienes()
         except Exception as e:
             print(f"❌ Error cambiando items por página: {e}")
+
+    # ========== MÉTODOS DE FILTROS AVANZADOS ==========
+
+    def aplicar_filtros_avanzados(self, filtros):
+        """Aplica filtros avanzados REALES usando BienManager"""
+        try:
+            print(f"🎯 Filtros recibidos en main_window: {filtros}")
+            
+            # Guardar filtros activos
+            self.filtros_activos = filtros
+            
+            if not filtros:
+                # Si no hay filtros, cargar todos los bienes normalmente
+                self.cargar_bienes()
+                self.status_bar.showMessage("✅ Todos los filtros limpiados")
+                return
+            
+            # Usar BienManager para aplicar filtros
+            bienes_filtrados = self.bien_manager.buscar_bienes(filtros)
+            
+            # Actualizar la tabla con los resultados filtrados
+            self.total_registros = len(bienes_filtrados)
+            self.pagina_actual = 1
+            self.total_paginas = max(1, (self.total_registros + self.registros_por_pagina - 1) // self.registros_por_pagina)
+            
+            # Obtener registros de la página actual
+            inicio = (self.pagina_actual - 1) * self.registros_por_pagina
+            fin = inicio + self.registros_por_pagina
+            bienes_paginados = bienes_filtrados[inicio:fin]
+            
+            # Mostrar en tabla
+            self.mostrar_bienes_en_tabla(bienes_paginados)
+            
+            # Actualizar controles de paginación
+            self.actualizar_controles_paginacion()
+            
+            # Actualizar status
+            criterios = len(filtros)
+            self.status_bar.showMessage(f"✅ Filtros aplicados: {criterios} criterios, {self.total_registros} resultados")
+            
+            print(f"✅ Filtros procesados: {criterios} criterios, {len(bienes_filtrados)} registros")
+            
+        except Exception as e:
+            print(f"❌ Error aplicando filtros: {e}")
+            self.status_bar.showMessage("❌ Error aplicando filtros")
+            # Fallback: cargar bienes normales
+            self.cargar_bienes()
+
     # ========== MÉTODOS DE DIÁLOGOS ==========
 
     def abrir_formulario_bien(self):
         """Abre el formulario de bienes"""
         try:
-            from ui.dialogs.bien_dialog import BienDialog
             dialog = BienDialog(self.db, self)
             if dialog.exec_() == QDialog.Accepted:
                 self.cargar_bienes()
                 self.actualizar_status_bar()
+                self.panel_filtros.actualizar_tipos_dinamicos()
         except Exception as e:
             print(f"❌ Error abriendo formulario bien: {e}")
 
     def abrir_formulario_movimiento(self):
         """Abre el formulario de movimientos"""
         try:
-            from ui.dialogs.movimiento_dialog import MovimientoDialog
             dialog = MovimientoDialog(self.db, self)
             if dialog.exec_() == QDialog.Accepted:
                 self.cargar_movimientos()
@@ -686,7 +751,6 @@ class VentanaPrincipal(QMainWindow):
     def mostrar_configuracion_avanzada(self):
         """Muestra el diálogo de configuración avanzada"""
         try:
-            from ui.dialogs.config_modo_dialog import ConfiguracionModoDialog
             dialog = ConfiguracionModoDialog(self)
             dialog.exec_()
         except Exception as e:
@@ -809,27 +873,285 @@ class VentanaPrincipal(QMainWindow):
         except Exception as e:
             self.status_bar.showMessage(f"👤 {self.usuario_actual['id']}")
 
+# ========== MÉTODOS DE EXPORTACIÓN REALES ==========
+
     def exportar_movimientos(self):
-        """Placeholder para exportar movimientos"""
-        QMessageBox.information(self, "Exportar", "Función de exportación de movimientos - Próximamente")
+        """Exporta movimientos a Excel"""
+        try:
+            # Obtener movimientos
+            movimientos = self.db.get_movimientos_detallados()
+            
+            if not movimientos:
+                QMessageBox.warning(self, "Exportar", "No hay movimientos para exportar")
+                return
+            
+            # Seleccionar archivo de destino
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Exportar Movimientos a Excel", 
+                f"movimientos_agc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                "Excel Files (*.xlsx)"
+            )
+            
+            if file_path:
+                # Crear DataFrame con columnas visibles
+                datos_exportar = []
+                for mov in movimientos:
+                    fila = {}
+                    for nombre_col, campo_bd in self.mapeo_columnas_movimientos:
+                        if self.columnas_visibles_movimientos.get(nombre_col, False):
+                            valor = self.safe_get(mov, campo_bd)
+                            if nombre_col == "Fecha Entrega":
+                                try:
+                                    fecha_dt = datetime.strptime(valor, "%Y-%m-%d")
+                                    valor = fecha_dt.strftime("%d/%m/%Y")
+                                except:
+                                    pass
+                            fila[nombre_col] = valor
+                    datos_exportar.append(fila)
+                
+                df = pd.DataFrame(datos_exportar)
+                
+                # Exportar a Excel
+                df.to_excel(file_path, index=False, engine='openpyxl')
+                
+                QMessageBox.information(self, "Éxito", 
+                                    f"Movimientos exportados correctamente:\n{file_path}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al exportar movimientos: {str(e)}")
 
     def exportar_filtrados(self):
-        """Placeholder para exportar bienes filtrados"""
-        QMessageBox.information(self, "Exportar", "Función de exportación de bienes - Próximamente")
+        """Exporta bienes filtrados a Excel"""
+        try:
+            # Obtener bienes (filtrados si hay filtros activos, sino todos)
+            if self.filtros_activos:
+                bienes = self.bien_manager.buscar_bienes(self.filtros_activos)
+                tipo_export = "filtrados"
+            else:
+                bienes = self.db.list_bienes(limite=10000)
+                tipo_export = "completo"
+            
+            if not bienes:
+                QMessageBox.warning(self, "Exportar", "No hay datos para exportar")
+                return
+            
+            # Seleccionar archivo de destino
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Exportar Bienes a Excel", 
+                f"bienes_agc_{tipo_export}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                "Excel Files (*.xlsx)"
+            )
+            
+            if file_path:
+                # Crear DataFrame con columnas visibles
+                datos_exportar = []
+                for bien in bienes:
+                    fila = {}
+                    for nombre_col, campo_bd in self.mapeo_columnas:
+                        if self.columnas_visibles_bienes.get(nombre_col, False):
+                            fila[nombre_col] = self.safe_get(bien, campo_bd)
+                    datos_exportar.append(fila)
+                
+                df = pd.DataFrame(datos_exportar)
+                
+                # Exportar a Excel
+                df.to_excel(file_path, index=False, engine='openpyxl')
+                
+                QMessageBox.information(self, "Éxito", 
+                                    f"Bienes exportados correctamente:\n{file_path}\n"
+                                    f"Total: {len(bienes)} registros")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al exportar bienes: {str(e)}")
 
     def exportar_estadisticas_pdf(self):
-        """Placeholder para exportar PDF"""
-        QMessageBox.information(self, "Exportar PDF", "Función de exportación PDF - Próximamente")
-
-    def aplicar_filtros_avanzados(self, filtros):
-        """Placeholder para filtros avanzados"""
-        print(f"🔍 Filtros aplicados: {filtros}")
-        QMessageBox.information(self, "Filtros", "Sistema de filtros avanzados - Próximamente")
+        """Exporta estadísticas a PDF"""
+        try:
+            # Obtener estadísticas
+            stats = self.db.get_estadisticas()
+            
+            # Crear documento PDF
+            document = QTextDocument()
+            cursor = QTextCursor(document)
+            
+            # Estilos
+            title_format = QTextCharFormat()
+            title_format.setFont(QFont("Arial", 16, QFont.Bold))
+            
+            header_format = QTextCharFormat()
+            header_format.setFont(QFont("Arial", 12, QFont.Bold))
+            
+            normal_format = QTextCharFormat()
+            normal_format.setFont(QFont("Arial", 10))
+            
+            # Título
+            cursor.insertText("📊 INFORME ESTADÍSTICO - INVENTARIO AGC\n", title_format)
+            cursor.insertText(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n", normal_format)
+            cursor.insertText(f"Usuario: {self.usuario_actual['id']}\n\n", normal_format)
+            
+            # Estadísticas generales
+            cursor.insertText("ESTADÍSTICAS GENERALES\n", header_format)
+            cursor.insertText(f"Total de bienes: {stats.get('total', 0)}\n", normal_format)
+            
+            # Distribución por estado
+            cursor.insertText("\nDISTRIBUCIÓN POR ESTADO\n", header_format)
+            por_estado = stats.get('por_estado', {})
+            for estado, cantidad in por_estado.items():
+                cursor.insertText(f"• {estado}: {cantidad}\n", normal_format)
+            
+            # Distribución por tipo
+            cursor.insertText("\nDISTRIBUCIÓN POR TIPO\n", header_format)
+            por_tipo = stats.get('por_tipo', {})
+            for tipo, cantidad in por_tipo.items():
+                cursor.insertText(f"• {tipo}: {cantidad}\n", normal_format)
+            
+            # Seleccionar archivo de destino
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Exportar Estadísticas a PDF", 
+                f"estadisticas_agc_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                "PDF Files (*.pdf)"
+            )
+            
+            if file_path:
+                # Exportar a PDF
+                printer = QtPrintSupport.QPrinter(QtPrintSupport.QPrinter.HighResolution)
+                printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+                printer.setOutputFileName(file_path)
+                
+                document.print_(printer)
+                QMessageBox.information(self, "Éxito", f"Estadísticas exportadas a PDF:\n{file_path}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al exportar PDF: {str(e)}")
 
     def mostrar_configuracion_columnas(self):
-        """Placeholder para configuración de columnas"""
-        QMessageBox.information(self, "Columnas", "Configuración de columnas - Próximamente")
+        """Diálogo para configurar columnas visibles de bienes"""
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("⚙️ Configurar Columnas - Bienes")
+            dialog.setModal(True)
+            dialog.resize(400, 500)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # Título
+            title = QLabel("Seleccione las columnas visibles:")
+            title.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
+            layout.addWidget(title)
+            
+            # Lista de checkboxes
+            scroll = QScrollArea()
+            scroll_widget = QWidget()
+            scroll_layout = QVBoxLayout(scroll_widget)
+            
+            self.checkboxes_bienes = {}
+            for nombre_col, _ in self.mapeo_columnas:
+                checkbox = QCheckBox(nombre_col)
+                checkbox.setChecked(self.columnas_visibles_bienes.get(nombre_col, False))
+                scroll_layout.addWidget(checkbox)
+                self.checkboxes_bienes[nombre_col] = checkbox
+            
+            scroll.setWidget(scroll_widget)
+            layout.addWidget(scroll)
+            
+            # Botones
+            button_layout = QHBoxLayout()
+            btn_aceptar = QPushButton("✅ Aplicar")
+            btn_cancelar = QPushButton("❌ Cancelar")
+            
+            btn_aceptar.clicked.connect(lambda: self._aplicar_configuracion_columnas_bienes(dialog))
+            btn_cancelar.clicked.connect(dialog.reject)
+            
+            button_layout.addWidget(btn_aceptar)
+            button_layout.addWidget(btn_cancelar)
+            layout.addLayout(button_layout)
+            
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error en configuración de columnas: {str(e)}")
+
+    def _aplicar_configuracion_columnas_bienes(self, dialog):
+        """Aplica la configuración de columnas de bienes"""
+        try:
+            # Actualizar configuración
+            for nombre_col, checkbox in self.checkboxes_bienes.items():
+                self.columnas_visibles_bienes[nombre_col] = checkbox.isChecked()
+            
+            # Reconfigurar tabla
+            self.configurar_columnas_tabla()
+            
+            # Recargar datos
+            self.cargar_bienes()
+            
+            dialog.accept()
+            QMessageBox.information(self, "Éxito", "Configuración de columnas aplicada correctamente")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error aplicando configuración: {str(e)}")
 
     def mostrar_configuracion_columnas_movimientos(self):
-        """Placeholder para configuración de columnas de movimientos"""
-        QMessageBox.information(self, "Columnas Movimientos", "Configuración de columnas - Próximamente")
+        """Diálogo para configurar columnas visibles de movimientos"""
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("⚙️ Configurar Columnas - Movimientos")
+            dialog.setModal(True)
+            dialog.resize(400, 500)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # Título
+            title = QLabel("Seleccione las columnas visibles:")
+            title.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 10px;")
+            layout.addWidget(title)
+            
+            # Lista de checkboxes
+            scroll = QScrollArea()
+            scroll_widget = QWidget()
+            scroll_layout = QVBoxLayout(scroll_widget)
+            
+            self.checkboxes_movimientos = {}
+            for nombre_col, _ in self.mapeo_columnas_movimientos:
+                checkbox = QCheckBox(nombre_col)
+                checkbox.setChecked(self.columnas_visibles_movimientos.get(nombre_col, False))
+                scroll_layout.addWidget(checkbox)
+                self.checkboxes_movimientos[nombre_col] = checkbox
+            
+            scroll.setWidget(scroll_widget)
+            layout.addWidget(scroll)
+            
+            # Botones
+            button_layout = QHBoxLayout()
+            btn_aceptar = QPushButton("✅ Aplicar")
+            btn_cancelar = QPushButton("❌ Cancelar")
+            
+            btn_aceptar.clicked.connect(lambda: self._aplicar_configuracion_columnas_movimientos(dialog))
+            btn_cancelar.clicked.connect(dialog.reject)
+            
+            button_layout.addWidget(btn_aceptar)
+            button_layout.addWidget(btn_cancelar)
+            layout.addLayout(button_layout)
+            
+            dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error en configuración de columnas: {str(e)}")
+
+    def _aplicar_configuracion_columnas_movimientos(self, dialog):
+        """Aplica la configuración de columnas de movimientos"""
+        try:
+            # Actualizar configuración
+            for nombre_col, checkbox in self.checkboxes_movimientos.items():
+                self.columnas_visibles_movimientos[nombre_col] = checkbox.isChecked()
+            
+            # Reconfigurar tabla
+            self.configurar_columnas_movimientos()
+            
+            # Recargar datos
+            self.cargar_movimientos()
+            
+            dialog.accept()
+            QMessageBox.information(self, "Éxito", "Configuración de columnas aplicada correctamente")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error aplicando configuración: {str(e)}")
