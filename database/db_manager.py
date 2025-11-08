@@ -347,6 +347,18 @@ class DB:
             # ✅ SEGUNDO: Verificar qué columnas existen AHORA
             cur.execute("PRAGMA table_info(bienes)")
             todas_columnas = [col[1] for col in cur.fetchall()]
+
+            # ✅ NUEVO: LIMPIAR CAMPOS NUMÉRICOS ANTES DE GUARDAR
+            campos_a_limpiar = ['imei', 'dni_cuit', 'linea', 'sim', 'serie']
+            for campo in campos_a_limpiar:
+                if campo in data and data[campo] is not None:
+                    # Convertir a string y limpiar .0
+                    valor = str(data[campo])
+                    if valor.endswith('.0'):
+                        data[campo] = valor[:-2]
+                    # También limpiar si es número científico o decimal cero
+                    elif '.' in valor and valor.split('.')[1] == '0':
+                        data[campo] = valor.split('.')[0]            
             
             # ✅ TERCERO: Usar TODOS los campos de data que existen en la BD
             columnas_a_usar = []
@@ -395,10 +407,6 @@ class DB:
             return False
         finally:
             cur.close()
-
-    # ... (los demás métodos los pongo en el siguiente mensaje)
-
-    # ... (continuación de métodos de DB)
 
     def list_bienes(self, limite=1000):
         """Obtiene bienes ordenados por fecha con límite para rendimiento"""

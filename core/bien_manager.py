@@ -13,14 +13,46 @@ class BienManager:
 
     # ✅ AGREGAR AQUÍ LA NUEVA FUNCIÓN
     def _limpiar_valor_numerico(self, valor):
-        """Limpia .0 de valores que deberían ser strings numéricos"""
+        """Limpia .0 de valores que deberían ser strings numéricos - VERSIÓN MEJORADA"""
         if valor is None:
             return ""
+        
         valor_str = str(valor)
-        # Solo quitar .0 si es exactamente un decimal cero
+        
+        # Quitar .0 al final y también convertir números científicos
         if valor_str.endswith('.0'):
             return valor_str[:-2]
-        return valor_str
+        elif '.' in valor_str and valor_str.split('.')[1] == '0':
+            return valor_str.split('.')[0]
+        else:
+            return valor_str
+
+    def _normalizar_texto(self, texto):
+        """Normaliza texto quitando acentos y convirtiendo a minúsculas"""
+        if texto is None:
+            return ""
+        
+        # Convertir a string y minúsculas
+        texto = str(texto).lower()
+        
+        # Reemplazar caracteres con acento
+        reemplazos = {
+            'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u',
+            'à': 'a', 'è': 'e', 'ì': 'i', 'ò': 'o', 'ù': 'u',
+            'ä': 'a', 'ë': 'e', 'ï': 'i', 'ö': 'o',
+            'â': 'a', 'ê': 'e', 'î': 'i', 'ô': 'o', 'û': 'u',
+            'ã': 'a', 'ñ': 'n', 'ç': 'c',
+            'Á': 'a', 'É': 'e', 'Í': 'i', 'Ó': 'o', 'Ú': 'u', 'Ü': 'u',
+            'À': 'a', 'È': 'e', 'Ì': 'i', 'Ò': 'o', 'Ù': 'u',
+            'Ä': 'a', 'Ë': 'e', 'Ï': 'i', 'Ö': 'o',
+            'Â': 'a', 'Ê': 'e', 'Î': 'i', 'Ô': 'o', 'Û': 'u',
+            'Ã': 'a', 'Ñ': 'n', 'Ç': 'c'
+        }
+        
+        for acento, normal in reemplazos.items():
+            texto = texto.replace(acento, normal)
+        
+        return texto
     
     def crear_bien(self, datos_bien):
         """Crea un nuevo bien con validaciones"""
@@ -133,17 +165,22 @@ class BienManager:
                     cumple_filtros = False
                     continue
             
-            # ✅ 5. FILTRO POR MARCA
+            # ✅ FILTRO POR MARCA - SIN ACENTOS
             if 'marca' in filtros and filtros['marca']:
-                marca_bien = str(bien_dict.get('marca', '')).lower()
-                if filtros['marca'].lower() not in marca_bien:
+                marca_bien = self._normalizar_texto(bien_dict.get('marca', ''))
+                filtro_marca = self._normalizar_texto(filtros['marca'])
+                
+                if filtro_marca not in marca_bien:
                     cumple_filtros = False
                     continue
+
             
-            # ✅ 6. FILTRO POR MODELO
+            # ✅ FILTRO POR MODELO - SIN ACENTOS
             if 'modelo' in filtros and filtros['modelo']:
-                modelo_bien = str(bien_dict.get('modelo', '')).lower()
-                if filtros['modelo'].lower() not in modelo_bien:
+                modelo_bien = self._normalizar_texto(bien_dict.get('modelo', ''))
+                filtro_modelo = self._normalizar_texto(filtros['modelo'])
+                
+                if filtro_modelo not in modelo_bien:
                     cumple_filtros = False
                     continue
             
@@ -154,9 +191,9 @@ class BienManager:
                     cumple_filtros = False
                     continue
             
-            # ✅ 8. FILTRO POR IMEI
+            # ✅ FILTRO POR IMEI - DEBE USAR _limpiar_valor_numerico
             if 'imei' in filtros and filtros['imei']:
-                imei_bien = self._limpiar_valor_numerico(bien_dict.get('imei', ''))  # ← LIMPIADO
+                imei_bien = self._limpiar_valor_numerico(bien_dict.get('imei', ''))  # ← DEBE ESTAR ESTO
                 if filtros['imei'].lower() not in imei_bien.lower():
                     cumple_filtros = False
                     continue
@@ -184,16 +221,21 @@ class BienManager:
                     cumple_filtros = False
                     continue
             
+            # ✅ FILTRO POR NOMBRE - SIN ACENTOS
             if 'nombre' in filtros and filtros['nombre']:
-                nombre_bien = str(bien_dict.get('nombre', '')).lower()
-                if filtros['nombre'].lower() not in nombre_bien:
+                nombre_bien = self._normalizar_texto(bien_dict.get('nombre', ''))
+                filtro_nombre = self._normalizar_texto(filtros['nombre'])
+                
+                if filtro_nombre not in nombre_bien:
                     cumple_filtros = False
                     continue
                     
-            # ✅ 13. FILTRO POR APELLIDO
+            # ✅ FILTRO POR APELLIDO - SIN ACENTOS  
             if 'apellido' in filtros and filtros['apellido']:
-                apellido_bien = str(bien_dict.get('apellido', '')).lower()
-                if filtros['apellido'].lower() not in apellido_bien:
+                apellido_bien = self._normalizar_texto(bien_dict.get('apellido', ''))
+                filtro_apellido = self._normalizar_texto(filtros['apellido'])
+                
+                if filtro_apellido not in apellido_bien:
                     cumple_filtros = False
                     continue
             
@@ -204,16 +246,16 @@ class BienManager:
                     cumple_filtros = False
                     continue
             
-            # ✅ FILTRO POR INSTITUCIONAL - BÚSQUEDA PARCIAL MEJORADA
+            # ✅ FILTRO POR INSTITUCIONAL - SIN ACENTOS + BÚSQUEDA INTELIGENTE
             if 'institucional' in filtros and filtros['institucional']:
-                institucional_bien = str(bien_dict.get('institucional', '')).lower()
-                filtro_institucional = filtros['institucional'].lower()
+                institucional_bien = self._normalizar_texto(bien_dict.get('institucional', ''))
+                filtro_institucional = self._normalizar_texto(filtros['institucional'])
                 
-                # Normalizar: quitar "DE", comillas y espacios extra
+                # Normalizar: quitar "DE", comillas y espacios extra (EN TEXTO NORMALIZADO)
                 institucional_clean = institucional_bien.replace('"', '').replace(' de ', ' ').replace('  ', ' ')
                 filtro_clean = filtro_institucional.replace('"', '').replace(' de ', ' ').replace('  ', ' ')
                 
-                # Buscar si el filtro está contenido en el valor (sin "DE")
+                # Buscar si el filtro está contenido en el valor (sin "DE" y sin acentos)
                 if filtro_clean not in institucional_clean:
                     cumple_filtros = False
                     continue
@@ -239,17 +281,21 @@ class BienManager:
                 except (ValueError, TypeError):
                     pass  # Si no es número, ignorar filtro
             
-            # ✅ 17. FILTRO POR AÑO PRD
+            # ✅ 17. FILTRO POR AÑO PRD - COMPARACIÓN EXACTA MEJORADA
             if 'anio_prd' in filtros and filtros['anio_prd']:
-                anio_bien = str(bien_dict.get('anio_prd', ''))
-                if filtros['anio_prd'] not in anio_bien:
+                anio_bien = str(bien_dict.get('anio_prd', '')).strip().replace(' ', '')
+                filtro_anio = filtros['anio_prd'].strip().replace(' ', '')
+                
+                if anio_bien != filtro_anio:
                     cumple_filtros = False
                     continue
             
-            # ✅ 18. FILTRO POR DESCRIPCIÓN
+            # ✅ FILTRO POR DESCRIPCIÓN - SIN ACENTOS
             if 'descripcion' in filtros and filtros['descripcion']:
-                descripcion_bien = str(bien_dict.get('descripcion', '')).lower()
-                if filtros['descripcion'].lower() not in descripcion_bien:
+                descripcion_bien = self._normalizar_texto(bien_dict.get('descripcion', ''))
+                filtro_descripcion = self._normalizar_texto(filtros['descripcion'])
+                
+                if filtro_descripcion not in descripcion_bien:
                     cumple_filtros = False
                     continue
             

@@ -73,18 +73,18 @@ class PanelFiltrosAvanzados(QWidget):
         fila_ficha = QHBoxLayout()
         self.filtro_ficha_desde = QLineEdit()
         self.filtro_ficha_desde.setPlaceholderText("Desde")
-        self.filtro_ficha_desde.setValidator(QIntValidator(0, 99999))
-        self.filtro_ficha_desde.setMaximumWidth(60)
+        self.filtro_ficha_desde.setValidator(QIntValidator(0, 99999999))
+        self.filtro_ficha_desde.setMaximumWidth(100)
         self.filtro_ficha_desde.textChanged.connect(self._aplicar_automaticamente)
         
         self.filtro_ficha_hasta = QLineEdit()
         self.filtro_ficha_hasta.setPlaceholderText("Hasta")
-        self.filtro_ficha_hasta.setValidator(QIntValidator(0, 99999))
-        self.filtro_ficha_hasta.setMaximumWidth(60)
+        self.filtro_ficha_hasta.setValidator(QIntValidator(0, 99999999))
+        self.filtro_ficha_hasta.setMaximumWidth(100)
         self.filtro_ficha_hasta.textChanged.connect(self._aplicar_automaticamente)
         
         fila_ficha.addWidget(self.filtro_ficha_desde)
-        fila_ficha.addWidget(QLabel("a"))
+        fila_ficha.addWidget(QLabel("     a     "))
         fila_ficha.addWidget(self.filtro_ficha_hasta)
         fila_ficha.addStretch()
         
