@@ -268,14 +268,35 @@ class VentanaPrincipal(QMainWindow):
             }
         """)
 
-        btn_exportar = QPushButton("📊 Exportar Excel")
-        btn_exportar.clicked.connect(self.exportar_filtrados)
-        btn_exportar.setStyleSheet("""
+        # BOTÓN EXCEL (verde)
+        btn_exportar_excel = QPushButton("📊 Exportar Excel")
+        btn_exportar_excel.clicked.connect(self.exportar_filtrados)
+        btn_exportar_excel.setStyleSheet("""
             QPushButton { 
-                background-color: #e67e22; 
+                background-color: #27ae60; 
                 color: white; 
                 padding: 6px 12px;
                 border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #219653;
+            }
+        """)
+
+        # BOTÓN PDF (rojo)
+        btn_exportar_pdf = QPushButton("📄 Exportar PDF")
+        btn_exportar_pdf.clicked.connect(self.exportar_filtrados_pdf)
+        btn_exportar_pdf.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
             }
         """)
 
@@ -293,7 +314,8 @@ class VentanaPrincipal(QMainWindow):
         # Agregar botones al layout
         controles_layout.addWidget(btn_cargar)
         controles_layout.addWidget(btn_nuevo_bien)
-        controles_layout.addWidget(btn_exportar)
+        controles_layout.addWidget(btn_exportar_excel)
+        controles_layout.addWidget(btn_exportar_pdf)
         controles_layout.addWidget(btn_columnas)
         controles_layout.addStretch()
 
@@ -362,9 +384,37 @@ class VentanaPrincipal(QMainWindow):
         self.btn_actualizar_mov = QPushButton("🔄 Actualizar")
         self.btn_actualizar_mov.clicked.connect(self.cargar_movimientos)
         
-        self.btn_exportar_mov = QPushButton("📤 Exportar Movimientos")
-        self.btn_exportar_mov.clicked.connect(self.exportar_movimientos)
-        self.btn_exportar_mov.setStyleSheet("QPushButton { background-color: #e67e22; color: white; }")
+        # BOTÓN EXCEL MOVIMIENTOS (verde)
+        self.btn_exportar_mov_excel = QPushButton("📤 Exportar Excel")
+        self.btn_exportar_mov_excel.clicked.connect(self.exportar_movimientos)
+        self.btn_exportar_mov_excel.setStyleSheet("""
+            QPushButton { 
+                background-color: #27ae60; 
+                color: white; 
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #219653;
+            }
+        """)
+
+        # BOTÓN PDF MOVIMIENTOS (rojo)
+        self.btn_exportar_mov_pdf = QPushButton("📄 Exportar PDF")  
+        self.btn_exportar_mov_pdf.clicked.connect(self.exportar_movimientos_pdf)
+        self.btn_exportar_mov_pdf.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
         
         self.btn_columnas_mov = QPushButton("⚙️ Columnas Movimientos")
         self.btn_columnas_mov.clicked.connect(self.mostrar_configuracion_columnas_movimientos)
@@ -372,7 +422,8 @@ class VentanaPrincipal(QMainWindow):
         
         controles_layout.addWidget(self.btn_nuevo_movimiento)
         controles_layout.addWidget(self.btn_actualizar_mov)
-        controles_layout.addWidget(self.btn_exportar_mov)
+        controles_layout.addWidget(self.btn_exportar_mov_excel)
+        controles_layout.addWidget(self.btn_exportar_mov_pdf)
         controles_layout.addWidget(self.btn_columnas_mov)
         controles_layout.addStretch()
         
@@ -1155,3 +1206,276 @@ class VentanaPrincipal(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error aplicando configuración: {str(e)}")
+
+# ========== 🆕 NUEVOS MÉTODOS PDF - AGREGAR DESDE AQUÍ ==========
+
+    def exportar_filtrados_pdf(self):
+        """Exporta bienes filtrados a PDF con formato horizontal mejorado"""
+        try:
+            # Obtener bienes (filtrados si hay filtros activos, sino todos)
+            if self.filtros_activos:
+                bienes = self.bien_manager.buscar_bienes(self.filtros_activos)
+                tipo_export = "filtrados"
+            else:
+                bienes = self.db.list_bienes(limite=10000)
+                tipo_export = "completo"
+            
+            if not bienes:
+                QMessageBox.warning(self, "Exportar PDF", "No hay datos para exportar")
+                return
+            
+            # Crear documento PDF (SIN setPageSize aquí)
+            document = QTextDocument()
+            cursor = QTextCursor(document)
+            
+            # Estilos profesionales
+            title_format = QTextCharFormat()
+            title_format.setFont(QFont("Arial", 16, QFont.Bold))
+            title_format.setForeground(Qt.darkBlue)
+            
+            subtitle_format = QTextCharFormat()
+            subtitle_format.setFont(QFont("Arial", 12, QFont.Bold))
+            subtitle_format.setForeground(Qt.darkGreen)
+            
+            header_format = QTextCharFormat()
+            header_format.setFont(QFont("Arial", 9, QFont.Bold))
+            header_format.setBackground(Qt.lightGray)
+            header_format.setForeground(Qt.black)
+            
+            normal_format = QTextCharFormat()
+            normal_format.setFont(QFont("Arial", 8))
+            
+            small_format = QTextCharFormat()
+            small_format.setFont(QFont("Arial", 7))
+            
+            # Título principal
+            cursor.insertBlock()
+            cursor.insertText("🏢 INVENTARIO AGC - LISTADO DE BIENES\n", title_format)
+            cursor.insertBlock()
+            cursor.insertText(f"📅 Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} | ", normal_format)
+            cursor.insertText(f"👤 Usuario: {self.usuario_actual['id']} | ", normal_format)
+            cursor.insertText(f"📊 Tipo: {tipo_export.upper()} | ", normal_format)
+            cursor.insertText(f"📦 Total: {len(bienes)} registros\n", normal_format)
+            cursor.insertBlock()
+            
+            # Crear tabla con MISMAS columnas que se ven en pantalla
+            columnas_activas = [nombre for nombre, campo in self.mapeo_columnas 
+                              if self.columnas_visibles_bienes.get(nombre, False)]
+            
+            # Encabezados de tabla
+            cursor.insertText("LISTADO DE BIENES\n", subtitle_format)
+            cursor.insertBlock()
+            
+            # Crear tabla con formato de ancho fijo
+            ancho_columna = 15  # Caracteres por columna
+            
+            # Encabezados de tabla (formateados con ancho fijo)
+            headers = ""
+            for columna in columnas_activas:
+                header = columna[:ancho_columna].ljust(ancho_columna)
+                headers += header + " "
+            
+            cursor.insertText(headers + "\n", header_format)
+            
+            # Línea separadora
+            separador = "-" * (len(columnas_activas) * (ancho_columna + 1))
+            cursor.insertText(separador + "\n", normal_format)
+            
+            # Datos de la tabla
+            registros_mostrados = 0
+            for i, bien in enumerate(bienes):
+                if registros_mostrados >= 100:  # Máximo 100 registros por página
+                    break
+                    
+                fila = ""
+                for nombre_col, campo_bd in self.mapeo_columnas:
+                    if not self.columnas_visibles_bienes.get(nombre_col, False):
+                        continue
+                        
+                    valor = self.safe_get(bien, campo_bd)
+                    
+                    # Aplicar misma lógica de visualización que en tabla
+                    if nombre_col == "ESTADO":
+                        estado = valor.lower()
+                        nombre = self.safe_get(bien, "nombre")
+                        apellido = self.safe_get(bien, "apellido")
+                        
+                        if (estado == "en depósito" or estado == "stock") and not (nombre.strip() or apellido.strip()):
+                            valor = "🟢 Disp."
+                    
+                    # Formatear valor para ancho fijo
+                    if len(str(valor)) > ancho_columna:
+                        valor = str(valor)[:ancho_columna-2] + ".."
+                    else:
+                        valor = str(valor).ljust(ancho_columna)
+                    
+                    fila += valor + " "
+                
+                cursor.insertText(fila + "\n", small_format)
+                registros_mostrados += 1
+            
+            # Información de paginación
+            cursor.insertBlock()
+            if len(bienes) > registros_mostrados:
+                cursor.insertText(f"⚠️ Mostrando {registros_mostrados} de {len(bienes)} registros. Use Excel para lista completa.\n", normal_format)
+            else:
+                cursor.insertText(f"✅ Mostrando todos los {len(bienes)} registros.\n", normal_format)
+            
+            # Seleccionar archivo de destino
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Exportar Bienes a PDF", 
+                f"bienes_agc_{tipo_export}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                "PDF Files (*.pdf)"
+            )
+            
+            if file_path:
+                # Configurar impresora PDF en horizontal
+                printer = QtPrintSupport.QPrinter(QtPrintSupport.QPrinter.HighResolution)
+                printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+                printer.setOutputFileName(file_path)
+                printer.setPageSize(QtPrintSupport.QPrinter.A4)
+                printer.setOrientation(QtPrintSupport.QPrinter.Landscape)  # ← MODO HORIZONTAL
+                printer.setPageMargins(10, 10, 10, 10, QtPrintSupport.QPrinter.Millimeter)
+                
+                # Generar PDF
+                document.print_(printer)
+                
+                QMessageBox.information(self, "✅ Éxito", 
+                                    f"📄 PDF generado correctamente:\n{file_path}\n"
+                                    f"📊 Registros: {registros_mostrados} de {len(bienes)}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"Error al exportar PDF: {str(e)}")
+
+    def exportar_movimientos_pdf(self):
+        """Exporta movimientos a PDF con formato horizontal mejorado"""
+        try:
+            # Obtener movimientos
+            movimientos = self.db.get_movimientos_detallados()
+            
+            if not movimientos:
+                QMessageBox.warning(self, "Exportar PDF", "No hay movimientos para exportar")
+                return
+            
+            # Crear documento PDF (SIN setPageSize aquí)
+            document = QTextDocument()
+            cursor = QTextCursor(document)
+            
+            # Estilos
+            title_format = QTextCharFormat()
+            title_format.setFont(QFont("Arial", 16, QFont.Bold))
+            title_format.setForeground(Qt.darkBlue)
+            
+            subtitle_format = QTextCharFormat()
+            subtitle_format.setFont(QFont("Arial", 12, QFont.Bold))
+            subtitle_format.setForeground(Qt.darkGreen)
+            
+            header_format = QTextCharFormat()
+            header_format.setFont(QFont("Arial", 9, QFont.Bold))
+            header_format.setBackground(Qt.lightGray)
+            
+            small_format = QTextCharFormat()
+            small_format.setFont(QFont("Arial", 7))
+            
+            normal_format = QTextCharFormat()
+            normal_format.setFont(QFont("Arial", 8))
+            
+            # Título
+            cursor.insertBlock()
+            cursor.insertText("🔄 INVENTARIO AGC - MOVIMIENTOS\n", title_format)
+            cursor.insertBlock()
+            cursor.insertText(f"📅 Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} | ", normal_format)
+            cursor.insertText(f"👤 Usuario: {self.usuario_actual['id']} | ", normal_format)
+            cursor.insertText(f"📋 Total: {len(movimientos)} movimientos\n", normal_format)
+            cursor.insertBlock()
+            
+            # Columnas activas
+            columnas_activas = [nombre for nombre, campo in self.mapeo_columnas_movimientos 
+                              if self.columnas_visibles_movimientos.get(nombre, False)]
+            
+            cursor.insertText("LISTADO DE MOVIMIENTOS\n", subtitle_format)
+            cursor.insertBlock()
+            
+            # Configurar ancho de columnas
+            ancho_columna = 18
+            
+            # Encabezados
+            headers = ""
+            for columna in columnas_activas:
+                header = columna[:ancho_columna].ljust(ancho_columna)
+                headers += header + " "
+            
+            cursor.insertText(headers + "\n", header_format)
+            
+            # Línea separadora
+            separador = "-" * (len(columnas_activas) * (ancho_columna + 1))
+            cursor.insertText(separador + "\n", normal_format)
+            
+            # Datos
+            movimientos_mostrados = 0
+            for mov in movimientos:
+                if movimientos_mostrados >= 80:  # Límite por página
+                    break
+                    
+                fila = ""
+                for nombre_col, campo_bd in self.mapeo_columnas_movimientos:
+                    if not self.columnas_visibles_movimientos.get(nombre_col, False):
+                        continue
+                        
+                    valor = self.safe_get(mov, campo_bd)
+                    
+                    # Misma lógica de visualización que en tabla
+                    if nombre_col == "Responsable":
+                        if " - " in valor:
+                            valor = valor.split(" - ")[0]
+                        if " (CUIT:" in valor:
+                            valor = valor.split(" (CUIT:")[0]
+                            
+                    elif nombre_col == "Fecha Entrega":
+                        try:
+                            fecha_dt = datetime.strptime(valor, "%Y-%m-%d")
+                            valor = fecha_dt.strftime("%d/%m/%Y")
+                        except:
+                            pass
+                            
+                    elif nombre_col == "PDF":
+                        valor = "📎 PDF" if valor and os.path.exists(valor) else ""
+                    
+                    # Formatear para ancho fijo
+                    if len(str(valor)) > ancho_columna:
+                        valor = str(valor)[:ancho_columna-2] + ".."
+                    else:
+                        valor = str(valor).ljust(ancho_columna)
+                    
+                    fila += valor + " "
+                
+                cursor.insertText(fila + "\n", small_format)
+                movimientos_mostrados += 1
+            
+            # Información de paginación
+            cursor.insertBlock()
+            if len(movimientos) > movimientos_mostrados:
+                cursor.insertText(f"⚠️ Mostrando {movimientos_mostrados} de {len(movimientos)} movimientos.\n", normal_format)
+            
+            # Seleccionar archivo
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Exportar Movimientos a PDF", 
+                f"movimientos_agc_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                "PDF Files (*.pdf)"
+            )
+            
+            if file_path:
+                printer = QtPrintSupport.QPrinter(QtPrintSupport.QPrinter.HighResolution)
+                printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+                printer.setOutputFileName(file_path)
+                printer.setPageSize(QtPrintSupport.QPrinter.A4)
+                printer.setOrientation(QtPrintSupport.QPrinter.Landscape)  # ← MODO HORIZONTAL
+                printer.setPageMargins(10, 10, 10, 10, QtPrintSupport.QPrinter.Millimeter)
+                
+                document.print_(printer)
+                QMessageBox.information(self, "✅ Éxito", 
+                                    f"📄 PDF de movimientos generado:\n{file_path}\n"
+                                    f"📋 Movimientos: {movimientos_mostrados} de {len(movimientos)}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"Error al exportar movimientos PDF: {str(e)}")
