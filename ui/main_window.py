@@ -21,6 +21,9 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QListWidget, QListWidgetItem, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QDesktopServices, QTextDocument, QTextCursor, QTextCharFormat, QFont
+# ✅ NUEVAS IMPORTACIONES PARA SINCRONIZACIÓN
+from core.sync_manager import SyncManager
+from config.config_manager import obtener_estado_sincronizacion, actualizar_ultima_sincronizacion
 
 # ✅ IMPORTS ABSOLUTOS (ahora funcionarán)
 from database.db_manager import DB
@@ -41,13 +44,31 @@ class VentanaPrincipal(QMainWindow):
         self.db = db
         self.usuario_actual = usuario_actual
         
-        # Inicializar BienManager
-        self.bien_manager = BienManager(db)
-        #self.excel_handler = ExcelHandler()  # ✅ INICIALIZAR ExcelHandler
+        # ✅ PRIMERO: Inicializar atributos críticos como None
+        self.status_bar = None
+        self._status_widgets = []
+        self.sync_manager = None  # ← ¡IMPORTANTE!
         
-        # Configuración inicial
+        # ✅ SEGUNDO: Configurar UI completa primero
         self._inicializar_configuracion()
-        self._setup_ui()
+        self._setup_ui()  # ← Esto crea la status_bar!
+        
+        # ✅ TERCERO: Ahora sí inicializar SyncManager (DESPUÉS del setup_ui)
+        self.sync_manager = SyncManager(db)
+        
+        # ✅ CUARTO: Conectar señales (ahora todo existe)
+        self.sync_manager.sincronizacion_iniciada.connect(self._on_sincronizacion_iniciada)
+        self.sync_manager.sincronizacion_completada.connect(self._on_sincronizacion_completada)
+        self.sync_manager.progreso_sincronizacion.connect(self._on_progreso_sincronizacion)
+        self.sync_manager.conflicto_detectado.connect(self._on_conflicto_detectado)
+        
+        # ✅ QUINTO: Actualizar UI final
+        self.actualizar_status_bar()
+        self._actualizar_estado_sincronizacion_ui()
+        
+        # Cargar datos iniciales
+        self.cargar_bienes()
+        self.cargar_movimientos()
         
     def _inicializar_configuracion(self):
         """Configuración inicial de la ventana"""
@@ -195,37 +216,307 @@ class VentanaPrincipal(QMainWindow):
         # Cargar datos iniciales
         self.cargar_bienes()
         self.cargar_movimientos()
+    # ✅ NUEVO: Actualizar UI de sincronización después de todo está listo
+        QtCore.QTimer.singleShot(100, self._actualizar_estado_sincronizacion_ui)
 
     def _crear_barra_herramientas(self):
-        """Crea la barra de herramientas con el selector de modo"""
+        """Crea la barra de herramientas con controles de sincronización - VERSIÓN COMPLETA"""
         toolbar = QToolBar("Modo")
         toolbar.setIconSize(QtCore.QSize(16, 16))
         self.addToolBar(toolbar)
         
-        # Botón de cambio de modo (por ahora placeholder)
-        self.btn_cambio_modo = QPushButton("🌐 MODO")
-        self.btn_cambio_modo.setStyleSheet("""
+        # ✅ NUEVO: Botón de estado de sincronización
+        self.btn_estado_sync = QPushButton("🔄 Conectando...")
+        self.btn_estado_sync.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
+                background-color: #95a5a6;
                 color: white;
                 font-weight: bold;
                 padding: 5px 10px;
                 border-radius: 3px;
+                border: 1px solid #7f8c8d;
+            }
+            QPushButton:hover {
+                background-color: #859596;
             }
         """)
-        toolbar.addWidget(self.btn_cambio_modo)
+        self.btn_estado_sync.clicked.connect(self.mostrar_dialogo_sincronizacion)
+        self.btn_estado_sync.setToolTip("Haz clic para ver detalles de sincronización")
+        toolbar.addWidget(self.btn_estado_sync)
+        
+        # ✅ NUEVO: Botón de sincronización manual
+        self.btn_sync_manual = QPushButton("🔄 Sincronizar")
+        self.btn_sync_manual.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #21618c;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+                border: 1px solid #95a5a6;
+            }
+        """)
+        self.btn_sync_manual.clicked.connect(self.sincronizar_manual)
+        self.btn_sync_manual.setToolTip("Sincronizar cambios manualmente con la red")
+        toolbar.addWidget(self.btn_sync_manual)
         
         # Separador
         toolbar.addSeparator()
         
-        # Botón de configuración avanzada
+        # Botón de configuración avanzada (existente)
         btn_config_avanzada = QPushButton("⚙️ Configuración")
+        btn_config_avanzada.setStyleSheet("""
+            QPushButton {
+                background-color: #9b59b6;
+                color: white;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #8e44ad;
+            }
+        """)
         btn_config_avanzada.clicked.connect(self.mostrar_configuracion_avanzada)
+        btn_config_avanzada.setToolTip("Configurar modo de trabajo y sincronización")
         toolbar.addWidget(btn_config_avanzada)
         
         # Espacio flexible
         toolbar.addWidget(QLabel(""))
         toolbar.addWidget(QLabel(""))
+        
+        # ✅ NUEVO: Etiqueta informativa del modo actual
+        self.label_info_modo = QLabel("Modo: Cargando...")
+        self.label_info_modo.setStyleSheet("""
+            QLabel {
+                color: #2c3e50;
+                font-weight: bold;
+                padding: 5px;
+                background-color: #ecf0f1;
+                border-radius: 3px;
+                border: 1px solid #bdc3c7;
+            }
+        """)
+        toolbar.addWidget(self.label_info_modo)
+        
+        # ✅ NUEVO: Actualizar estado inicial
+        self._actualizar_estado_sincronizacion_ui()
+
+    # ========== 🆕 MÉTODOS DE SINCRONIZACIÓN ==========
+
+    def _actualizar_estado_sincronizacion_ui(self):
+        """Actualiza la UI con el estado actual de sincronización - VERSIÓN ROBUSTA"""
+        try:
+            # ✅ VERIFICACIÓN EXTRA ROBUSTA - COMPROBAR TODOS LOS COMPONENTES
+            componentes_requeridos = [
+                'btn_estado_sync', 'label_info_modo', 'sync_manager', 
+                'status_bar', 'btn_sync_manual'
+            ]
+            
+            for componente in componentes_requeridos:
+                if not hasattr(self, componente) or getattr(self, componente) is None:
+                    print(f"⚠️ Componente '{componente}' no está listo aún")
+                    return
+            
+            # ✅ VERIFICAR QUE EL SYNC MANAGER ESTÉ INICIALIZADO CORRECTAMENTE
+            estado = self.sync_manager.obtener_estado()
+            if not estado:
+                print("⚠️ No se pudo obtener estado del SyncManager")
+                return
+                
+            modo = estado.get("modo_trabajo", "desconocido")
+            conectado = estado.get("conectado_red", False)
+            ultima_sync = estado.get("ultima_sincronizacion")
+            
+            # ✅ ACTUALIZAR ETIQUETA INFORMATIVA CON MEJOR DISEÑO
+            modo_texto = ""
+            color_modo = ""
+            icono_modo = ""
+            
+            if modo == "local_con_sincronizacion":
+                modo_texto = "MODO SINCRONIZACIÓN"
+                color_modo = "#27ae60"  # Verde
+                icono_modo = "🔄"
+            elif modo == "red_directo":
+                modo_texto = "MODO RED DIRECTO"  
+                color_modo = "#e67e22"  # Naranja
+                icono_modo = "🌐"
+            else:  # local_solo
+                modo_texto = "MODO LOCAL SOLO"
+                color_modo = "#e74c3c"  # Rojo
+                icono_modo = "🏠"
+                
+            self.label_info_modo.setText(f"{icono_modo} {modo_texto}")
+            self.label_info_modo.setStyleSheet(f"""
+                QLabel {{
+                    color: white;
+                    font-weight: bold;
+                    padding: 6px 12px;
+                    background-color: {color_modo};
+                    border-radius: 15px;
+                    border: 2px solid {color_modo};
+                    font-size: 11px;
+                }}
+            """)
+            
+            # ✅ ACTUALIZAR BOTÓN DE ESTADO CON MEJOR DISEÑO
+            if conectado:
+                if ultima_sync:
+                    try:
+                        from datetime import datetime
+                        fecha_dt = datetime.fromisoformat(ultima_sync.replace('Z', '+00:00'))
+                        fecha_str = fecha_dt.strftime("%H:%M")
+                        texto = f"✅ Sync: {fecha_str}"
+                        color = "#27ae60"  # Verde
+                        tooltip = f"Última sincronización: {fecha_dt.strftime('%d/%m/%Y %H:%M')}"
+                    except Exception as date_error:
+                        print(f"⚠️ Error formateando fecha: {date_error}")
+                        texto = "✅ Conectado"
+                        color = "#27ae60"
+                        tooltip = "Conectado a la red"
+                else:
+                    texto = "🔄 Primer Sync"
+                    color = "#f39c12"  # Naranja
+                    tooltip = "Primera sincronización pendiente"
+            else:
+                texto = "❌ Sin Red"
+                color = "#e74c3c"  # Rojo
+                tooltip = "Sin conexión a la red - Modo local activo"
+            
+            self.btn_estado_sync.setText(texto)
+            self.btn_estado_sync.setToolTip(tooltip)
+            self.btn_estado_sync.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: white;
+                    font-weight: bold;
+                    padding: 6px 12px;
+                    border-radius: 15px;
+                    border: 2px solid {color};
+                    font-size: 11px;
+                }}
+                QPushButton:hover {{
+                    background-color: {color};
+                    opacity: 0.9;
+                }}
+                QPushButton:pressed {{
+                    background-color: {color};
+                    opacity: 0.8;
+                }}
+            """)
+            
+            # ✅ HABILITAR/DESHABILITAR BOTÓN MANUAL
+            self.btn_sync_manual.setEnabled(conectado)
+            self.btn_sync_manual.setToolTip("Sincronizar manualmente con la red" if conectado else "No hay conexión a la red")
+            
+            # ✅ ACTUALIZAR BARRA DE ESTADO COMPLETA
+            if hasattr(self, 'actualizar_status_bar'):
+                self.actualizar_status_bar()
+            
+            print(f"✅ UI de sincronización actualizada: {modo_texto} - {texto}")
+            
+        except Exception as e:
+            print(f"⚠️ Error recuperable en UI sync: {e}")
+            # No hacemos nada, es un error temporal que se resolverá en el próximo intento
+
+    def sincronizar_manual(self):
+        """Inicia sincronización manual"""
+        try:
+            self.btn_sync_manual.setEnabled(False)
+            self.btn_sync_manual.setText("🔄 Sincronizando...")
+            self.sync_manager.sincronizar_manual()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error iniciando sincronización: {str(e)}")
+            self.btn_sync_manual.setEnabled(True)
+            self.btn_sync_manual.setText("🔄 Sincronizar")
+
+    def _on_sincronizacion_iniciada(self, mensaje):
+        """Maneja el inicio de sincronización"""
+        print(f"🔄 {mensaje}")
+        self.status_bar.showMessage(mensaje)
+
+    def _on_sincronizacion_completada(self, mensaje, exito):
+        """Maneja la finalización de sincronización - VERSIÓN CORREGIDA"""
+        print(f"✅ Sincronización completada: {mensaje}")
+        
+        # ✅ CORREGIDO: Verificar que status_bar existe antes de usarlo
+        if hasattr(self, 'status_bar') and self.status_bar is not None:
+            if exito:
+                self.status_bar.showMessage(f"✅ {mensaje}", 5000)
+            else:
+                self.status_bar.showMessage(f"❌ {mensaje}", 5000)
+        else:
+            # Si no existe status_bar, solo mostrar en consola
+            print(f"📢 {mensaje}")
+        
+        # Restaurar botón
+        self.btn_sync_manual.setEnabled(True)
+        self.btn_sync_manual.setText("🔄 Sincronizar")
+        
+        # Actualizar UI
+        self._actualizar_estado_sincronizacion_ui()
+        
+        # Recargar datos si hubo cambios y éxito
+        if exito:
+            self.cargar_bienes()
+            self.cargar_movimientos()
+            
+        # Mostrar mensaje si fue error
+        if not exito and "Error" in mensaje:
+            QMessageBox.warning(self, "Sincronización", mensaje)
+
+    def _on_progreso_sincronizacion(self, porcentaje, estado):
+        """Maneja actualizaciones de progreso - VERSIÓN CORREGIDA"""
+        # ✅ CORREGIDO: Verificar que status_bar existe
+        if hasattr(self, 'status_bar') and self.status_bar is not None:
+            self.status_bar.showMessage(f"🔄 {estado} ({porcentaje}%)")
+        else:
+            print(f"🔄 {estado} ({porcentaje}%)")
+
+    def _on_conflicto_detectado(self, conflicto):
+        """Maneja conflictos detectados"""
+        print(f"⚠️ Conflicto detectado: {conflicto}")
+        # Por ahora solo mostrar advertencia
+        QMessageBox.warning(self, "Conflicto", 
+                        f"Se detectó un conflicto en la sincronización.\n\n"
+                        f"ID: {conflicto.get('id', 'N/A')}\n"
+                        f"Tipo: {conflicto.get('tipo', 'N/A')}")
+
+    def mostrar_dialogo_sincronizacion(self):
+        """Muestra diálogo con información detallada de sincronización"""
+        try:
+            estado = self.sync_manager.obtener_estado()
+            
+            mensaje = f"""
+    🔄 ESTADO DE SINCRONIZACIÓN
+
+    📊 Modo de trabajo: {estado['modo_trabajo'].replace('_', ' ').title()}
+    🌐 Conexión red: {'✅ Conectado' if estado['conectado_red'] else '❌ Sin conexión'}
+    🕒 Última sincronización: {estado['ultima_sincronizacion'] or 'Nunca'}
+    🔄 Sincronización automática: {'✅ Activada' if estado['auto_sincronizar'] else '❌ Desactivada'}
+    ⏰ Timer activo: {'✅ Sí' if estado['timer_activo'] else '❌ No'}
+
+    💡 Información:
+    • La sincronización automática mantiene tu copia local actualizada
+    • Los cambios se suben automáticamente a la red
+    • Puedes sincronizar manualmente en cualquier momento
+            """
+            
+            QMessageBox.information(self, "Estado de Sincronización", mensaje.strip())
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error obteniendo estado: {str(e)}")
 
     def _crear_tab_buscar(self):
         """Crea la pestaña de búsqueda y consulta de bienes"""
@@ -908,21 +1199,210 @@ class VentanaPrincipal(QMainWindow):
     # ========== MÉTODOS AUXILIARES ==========
 
     def actualizar_status_bar(self):
-        """Actualiza la barra de estado"""
+        """Actualiza la barra de estado con información de sincronización - VERSIÓN ROBUSTA"""
         try:
+            # ✅ VERIFICAR QUE SYNC_MANAGER EXISTA
+            if not hasattr(self, 'sync_manager') or self.sync_manager is None:
+                # Estado temporal hasta que sync_manager esté listo
+                stats = self.db.get_estadisticas()
+                total_bienes = stats.get('total', 0)
+                mensaje = f"👤 {self.usuario_actual['id']} | 📦 Total: {total_bienes} | 🔧 Inicializando..."
+                self.status_bar.showMessage(mensaje)
+                return
+                
+            # ✅ SI SYNC_MANAGER EXISTE, PROCEDER NORMALMENTE
             stats = self.db.get_estadisticas()
-            modo = "LOCAL"  # Placeholder por ahora
-            rol = self.usuario_actual["rol"].upper()
+            estado_sync = self.sync_manager.obtener_estado()
             
-            self.status_bar.showMessage(
-                f"👤 {self.usuario_actual['id']} ({rol}) | "
-                f"Modo: {modo} | "
-                f"Total bienes: {stats['total']} | "
-                f"En depósito: {stats['por_estado'].get('En depósito', 0)} | "
-                f"Asignados: {stats['por_estado'].get('Asignado', 0)}"
+            # Formatear modo de trabajo
+            modo_trabajo = estado_sync.get("modo_trabajo", "desconocido").replace('_', ' ').title()
+            
+            # Estado de conexión
+            if estado_sync.get("conectado_red", False):
+                conexion = "🌐 Conectado"
+                color_conexion = "#27ae60"  # Verde
+            else:
+                conexion = "❌ Sin Red" 
+                color_conexion = "#e74c3c"  # Rojo
+            
+            # Formatear última sincronización
+            ultima_sync = estado_sync.get("ultima_sincronizacion")
+            if ultima_sync:
+                from datetime import datetime
+                try:
+                    if 'Z' in ultima_sync:
+                        fecha_dt = datetime.fromisoformat(ultima_sync.replace('Z', '+00:00'))
+                    else:
+                        fecha_dt = datetime.fromisoformat(ultima_sync)
+                    
+                    sync_str = f"Última sync: {fecha_dt.strftime('%H:%M')}"
+                    color_sync = "#27ae60"  # Verde
+                except Exception as e:
+                    print(f"⚠️ Error formateando fecha sync: {e}")
+                    sync_str = "Sync: Activo"
+                    color_sync = "#f39c12"  # Naranja
+            else:
+                sync_str = "Sync: Pendiente"
+                color_sync = "#f39c12"  # Naranja
+            
+            # Estadísticas de bienes
+            total_bienes = stats.get('total', 0)
+            en_deposito = stats.get('por_estado', {}).get('En depósito', 0)
+            asignados = stats.get('por_estado', {}).get('Asignado', 0)
+            bajas = stats.get('por_estado', {}).get('Baja definitiva', 0)
+            
+            # Construir mensaje de estado
+            mensaje_estado = (
+                f"👤 {self.usuario_actual['id']} | "
+                f"📊 Modo: {modo_trabajo} | "
+                f"{conexion} | "
+                f"{sync_str} | "
+                f"📦 Total: {total_bienes} | "
+                f"🟢 En depósito: {en_deposito} | "
+                f"🔵 Asignados: {asignados} | "
+                f"🔴 Bajas: {bajas}"
             )
+            
+            # Mostrar en barra de estado
+            self.status_bar.showMessage(mensaje_estado)
+            
+            # ✅ OPCIONAL: Agregar widgets (solo si sync_manager existe)
+            if hasattr(self, '_actualizar_widgets_status_bar'):
+                self._actualizar_widgets_status_bar(estado_sync, stats)
+            
         except Exception as e:
-            self.status_bar.showMessage(f"👤 {self.usuario_actual['id']}")
+            # Mensaje de fallback en caso de error
+            error_msg = f"👤 {self.usuario_actual['id']} | Error actualizando estado: {str(e)}"
+            if hasattr(self, 'status_bar') and self.status_bar is not None:
+                self.status_bar.showMessage(error_msg)
+            print(f"❌ Error en actualizar_status_bar: {e}")
+
+    def _actualizar_widgets_status_bar(self, estado_sync, stats):
+        """Agrega widgets visuales a la barra de estado - VERSIÓN ROBUSTA"""
+        try:
+            # ✅ NUEVO: Limpiar widgets existentes de forma segura
+            if hasattr(self, '_status_widgets'):
+                for widget in self._status_widgets:
+                    try:
+                        self.status_bar.removeWidget(widget)
+                        widget.deleteLater()
+                    except:
+                        pass
+            
+            self._status_widgets = []
+            
+            # ✅ WIDGET DE CONEXIÓN
+            label_conexion = QLabel()
+            if estado_sync["conectado_red"]:
+                label_conexion.setText("🌐")
+                label_conexion.setToolTip("Conectado a la red")
+                label_conexion.setStyleSheet("""
+                    QLabel {
+                        color: #27ae60; 
+                        font-weight: bold; 
+                        padding: 0 8px;
+                        background-color: #d5f4e6;
+                        border-radius: 10px;
+                        margin: 2px;
+                    }
+                """)
+            else:
+                label_conexion.setText("❌")
+                label_conexion.setToolTip("Sin conexión a la red")
+                label_conexion.setStyleSheet("""
+                    QLabel {
+                        color: #e74c3c; 
+                        font-weight: bold; 
+                        padding: 0 8px;
+                        background-color: #fadbd8;
+                        border-radius: 10px;
+                        margin: 2px;
+                    }
+                """)
+            
+            self.status_bar.addPermanentWidget(label_conexion)
+            self._status_widgets.append(label_conexion)
+            
+            # ✅ WIDGET DE BIENES TOTALES
+            total_bienes = stats.get('total', 0)
+            label_bienes = QLabel(f"📦 {total_bienes}")
+            label_bienes.setToolTip(f"Total de bienes en inventario: {total_bienes}")
+            label_bienes.setStyleSheet("""
+                QLabel {
+                    color: #3498db; 
+                    font-weight: bold; 
+                    padding: 0 8px;
+                    background-color: #d6eaf8;
+                    border-radius: 10px;
+                    margin: 2px;
+                }
+            """)
+            self.status_bar.addPermanentWidget(label_bienes)
+            self._status_widgets.append(label_bienes)
+            
+            # ✅ WIDGET DE BIENES EN DEPÓSITO
+            en_deposito = stats.get('por_estado', {}).get('En depósito', 0)
+            label_deposito = QLabel(f"🟢 {en_deposito}")
+            label_deposito.setToolTip(f"Bienes disponibles en depósito: {en_deposito}")
+            label_deposito.setStyleSheet("""
+                QLabel {
+                    color: #27ae60; 
+                    font-weight: bold; 
+                    padding: 0 8px;
+                    background-color: #d5f4e6;
+                    border-radius: 10px;
+                    margin: 2px;
+                }
+            """)
+            self.status_bar.addPermanentWidget(label_deposito)
+            self._status_widgets.append(label_deposito)
+            
+            # ✅ WIDGET DE BIENES ASIGNADOS
+            asignados = stats.get('por_estado', {}).get('Asignado', 0)
+            if asignados > 0:
+                label_asignados = QLabel(f"👤 {asignados}")
+                label_asignados.setToolTip(f"Bienes asignados: {asignados}")
+                label_asignados.setStyleSheet("""
+                    QLabel {
+                        color: #e67e22; 
+                        font-weight: bold; 
+                        padding: 0 8px;
+                        background-color: #fdebd0;
+                        border-radius: 10px;
+                        margin: 2px;
+                    }
+                """)
+                self.status_bar.addPermanentWidget(label_asignados)
+                self._status_widgets.append(label_asignados)
+            
+            # ✅ WIDGET DE HORA ACTUAL
+            from datetime import datetime
+            hora_actual = datetime.now().strftime("%H:%M")
+            label_hora = QLabel(f"🕒 {hora_actual}")
+            label_hora.setToolTip("Hora actual del sistema")
+            label_hora.setStyleSheet("""
+                QLabel {
+                    color: #9b59b6; 
+                    font-weight: bold; 
+                    padding: 0 8px;
+                    background-color: #e8daef;
+                    border-radius: 10px;
+                    margin: 2px;
+                }
+            """)
+            self.status_bar.addPermanentWidget(label_hora)
+            self._status_widgets.append(label_hora)
+            
+            print("✅ Widgets de estado actualizados correctamente")
+            
+        except Exception as e:
+            print(f"⚠️ Error en widgets de estado: {e}")
+            # Fallback seguro: solo mostrar mensaje básico
+            try:
+                total_bienes = stats.get('total', 0)
+                self.status_bar.showMessage(f"📦 Total bienes: {total_bienes}")
+            except:
+                pass
 
 # ========== MÉTODOS DE EXPORTACIÓN REALES ==========
 

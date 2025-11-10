@@ -1,61 +1,98 @@
 """
-📱 PUNTO DE ENTRADA PRINCIPAL - Sistema de Inventario AGC
+🏢 SISTEMA DE INVENTARIO AGC - PUNTO DE ENTRADA
+Sistema completo de gestión de bienes patrimoniales
 """
 
 import sys
 import os
 import traceback
 
-# Agregar la carpeta del proyecto al path de Python
+# ✅ AGREGAR ESTO PARA IMPORTS ABSOLUTOS
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
-# Importar desde nuestros nuevos módulos
-from config.settings import DB_PATH, ACTAS_FOLDER
+# ✅ NUEVAS IMPORTACIONES - ARQUITECTURA PROFESIONAL
+from config.settings import get_db_path, get_actas_folder, get_info_sistema
 from database.db_manager import DB
 from ui.dialogs.login_dialog import LoginDialog
 from ui.main_window import VentanaPrincipal
 
 
+def excepcion_global(tipo, valor, tb):
+    """Manejador global de excepciones"""
+    traceback.print_exception(tipo, valor, tb)
+    QMessageBox.critical(
+        None, 
+        "Error Crítico", 
+        f"Error inesperado:\n\n{str(valor)}\n\nRevisa la consola para más detalles."
+    )
+    sys.exit(1)
+
+
 def main():
     """Función principal de la aplicación"""
     try:
-        print("🚀 INICIANDO SISTEMA DE INVENTARIO AGC...")
+        # Configurar manejo de excepciones
+        sys.excepthook = excepcion_global
         
-        # Crear aplicación
+        # Crear aplicación Qt
         app = QApplication(sys.argv)
-        app.setStyle('Fusion')
+        app.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        app.setFont(QFont("Segoe UI", 10))
         
-        # 🗄️ CONECTAR A BASE DE DATOS
-        print("🔗 Conectando a base de datos...")
-        db = DB(DB_PATH, ACTAS_FOLDER)
-        print("✅ Base de datos conectada")
+        print("🚀 INICIANDO SISTEMA DE INVENTARIO AGC - ARQUITECTURA PROFESIONAL")
+        print("=" * 70)
         
-        # 🔐 MOSTRAR LOGIN
-        print("🔐 Mostrando login...")
-        login_dialog = LoginDialog(db)  # ✅ ¡PASA LA BASE DE DATOS!
-        if login_dialog.exec_() != LoginDialog.Accepted:
-            print("❌ Login cancelado por el usuario")
-            return 0  # Salida normal
+        # ✅ NUEVO: Mostrar información del sistema
+        info_sistema = get_info_sistema()
+        print(f"📍 Modo: {info_sistema['modo_trabajo']}")
+        print(f"🗃️ BD Activa: {info_sistema['db_activa']}")
+        print(f"🌐 BD Maestra: {info_sistema['db_maestra']}")
+        print(f"📁 Carpeta Actas: {info_sistema['carpeta_actas']}")
+        print(f"👤 Usuario: {info_sistema['usuario']}")
+        print("=" * 70)
+        
+        # ✅ NUEVO: Obtener rutas dinámicamente
+        db_path = get_db_path()
+        actas_folder = get_actas_folder()
+        
+        print(f"🔗 Conectando a base de datos: {db_path}")
+        
+        # Inicializar base de datos
+        db = DB(db_path, actas_folder)
+        
+        # Mostrar diálogo de login
+        login_dialog = LoginDialog(db)
+        if login_dialog.exec_() == LoginDialog.Accepted:
+            usuario = login_dialog.obtener_usuario_actual()
+            print(f"✅ Usuario autenticado: {usuario['id']} ({usuario['rol']})")
             
-        # ✅ VERIFICAR USUARIO ANTES DE CONTINUAR
-        print("🏢 Iniciando ventana principal...")
-        if not hasattr(login_dialog, 'usuario_actual') or not login_dialog.usuario_actual:
-            print("❌ No se pudo obtener usuario del login")
-            return 1
+            # Crear y mostrar ventana principal
+            ventana = VentanaPrincipal(db, usuario)
+            ventana.show()
             
-        ventana = VentanaPrincipal(db, login_dialog.usuario_actual)
-        ventana.show()
-        print("✅ Sistema iniciado correctamente")
-        
-        return app.exec_()
-        
+            print("🎉 Sistema cargado correctamente")
+            print("💡 Usa el botón 🔄 Sincronizar para mantener tus datos actualizados")
+            
+            # Ejecutar aplicación
+            sys.exit(app.exec_())
+        else:
+            print("❌ Login cancelado")
+            sys.exit(0)
+            
     except Exception as e:
-        print(f"❌ Error crítico al iniciar: {e}")
-        print(f"📋 Detalles: {traceback.format_exc()}")
-        return 1
+        print(f"💥 ERROR CRÍTICO: {e}")
+        traceback.print_exc()
+        QMessageBox.critical(
+            None, 
+            "Error de Inicio", 
+            f"No se pudo iniciar la aplicación:\n\n{str(e)}"
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
