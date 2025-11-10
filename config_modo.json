@@ -1,18 +1,18 @@
 {
     "modo_trabajo": "local_con_sincronizacion",
-    "db_maestra_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp",
-    "db_cache_local": "C:\\InventarioApp\\inventario_local.db",
+    "db_maestra_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\inventario.db",
+    "db_cache_local": "C:\\Users\\20929508727\\InventarioApp\\inventario_local.db",
     "actas_folder_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\Actas",
-    "actas_folder_local": "C:\\InventarioApp\\actas_local",
+    "actas_folder_local": "C:\\Users\\20929508727\\InventarioApp\\actas_local",
     "auto_sincronizar": true,
-    "intervalo_sincronizacion": 600,
+    "intervalo_sincronizacion": 300,
     "notificar_conflictos": true,
     "resolucion_automatica": false,
     "backup_automatico": true,
     "max_backups": 10,
     "modo_local": false,
-    "db_path_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp",
-    "db_path_local": "C:\\InventarioApp\\inventario_local.db",
+    "db_path_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\inventario.db",
+    "db_path_local": "C:\\Users\\20929508727\\InventarioApp\\inventario_local.db",
     "usuario_actual": "",
-    "ultima_sincronizacion": "2025-11-10T17:31:03.353948"
+    "ultima_sincronizacion": "2025-11-10T19:42:53.115614"
 }

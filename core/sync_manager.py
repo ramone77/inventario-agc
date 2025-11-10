@@ -40,23 +40,59 @@ class SyncManager(QObject):
 
     # ✅ AGREGAR AQUÍ - MÉTODO NUEVO
     def _crear_columnas_sincronizacion(self, db):
-        """Crea las columnas necesarias para sincronización si no existen"""
+        """Crea las columnas necesarias para sincronización si no existen - VERSIÓN COMPLETA"""
         try:
             cursor = db.conn.cursor()
+            columnas_creadas = False
             
-            # Verificar si existe la columna fecha_actualizacion
+            # ✅ VERIFICAR COLUMNAS EN TABLA BIENES
             cursor.execute("PRAGMA table_info(bienes)")
-            columnas = [col[1] for col in cursor.fetchall()]
+            columnas_bienes = [col[1] for col in cursor.fetchall()]
             
-            if 'fecha_actualizacion' not in columnas:
-                cursor.execute("ALTER TABLE bienes ADD COLUMN fecha_actualizacion TEXT")
-                print("✅ Columna 'fecha_actualizacion' agregada")
-                
+            # Lista de columnas necesarias para sincronización
+            columnas_necesarias = [
+                'fecha_actualizacion',
+                'ultima_sincronizacion',
+                'usuario_modificacion'
+            ]
+            
+            # Agregar columnas faltantes
+            for columna in columnas_necesarias:
+                if columna not in columnas_bienes:
+                    try:
+                        cursor.execute(f"ALTER TABLE bienes ADD COLUMN {columna} TEXT")
+                        print(f"✅ Columna '{columna}' agregada a tabla bienes")
+                        columnas_creadas = True
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
+            
+            # ✅ VERIFICAR COLUMNAS EN TABLA MOVIMIENTOS
+            cursor.execute("PRAGMA table_info(movimientos)")
+            columnas_movimientos = [col[1] for col in cursor.fetchall()]
+            
+            columnas_movimientos_necesarias = [
+                'fecha_actualizacion',
+                'usuario_modificacion'
+            ]
+            
+            for columna in columnas_movimientos_necesarias:
+                if columna not in columnas_movimientos:
+                    try:
+                        cursor.execute(f"ALTER TABLE movimientos ADD COLUMN {columna} TEXT")
+                        print(f"✅ Columna '{columna}' agregada a tabla movimientos")
+                        columnas_creadas = True
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
+            
             db.conn.commit()
-            return True
+            return columnas_creadas
             
         except Exception as e:
-            print(f"⚠️ Error creando columnas de sync: {e}")
+            print(f"❌ Error crítico creando columnas de sync: {e}")
+            try:
+                db.conn.rollback()
+            except:
+                pass
             return False
         
     def _inicializar_sincronizador(self):
@@ -69,21 +105,44 @@ class SyncManager(QObject):
             print(f"🔄 Sincronización automática cada {config['intervalo_sincronizacion']} segundos")
         
     def conectar_db_red(self):
-        """Intenta conectar a la base de datos de red"""
+        """Intenta conectar a la base de datos de red - VERSIÓN MEJORADA"""
         try:
             ruta_red = obtener_ruta_db_maestra()
             config = cargar_configuracion()
             
+            print(f"🔍 Verificando acceso a red: {os.path.dirname(ruta_red)}")
+            
+            # ✅ VERIFICAR ACCESO AL DIRECTORIO DE RED
             if not os.path.exists(os.path.dirname(ruta_red)):
-                print("❌ No se puede acceder a la ruta de red")
+                print("❌ No se puede acceder al directorio de red")
                 return False
             
+            # ✅ VERIFICAR SI EL ARCHIVO DE BD EXISTE
+            if not os.path.exists(ruta_red):
+                print(f"⚠️ Archivo de BD no existe en red: {ruta_red}")
+                # Podríamos crear uno nuevo, pero por ahora retornar False
+                return False
+            
+            # ✅ CONECTAR A LA BASE DE DATOS DE RED
             self.db_red = DB(ruta_red, config["actas_folder_red"])
-            print("✅ Conectado a base de datos de red")
+            
+            # ✅ NUEVO: CREAR COLUMNAS DE SINCRONIZACIÓN SI FALTAN
+            print("🔧 Verificando columnas de sincronización en BD red...")
+            columnas_creadas = self._crear_columnas_sincronizacion(self.db_red)
+            
+            if columnas_creadas:
+                print("✅ Columnas de sincronización verificadas/creadas en BD red")
+            else:
+                print("⚠️ No se pudieron crear algunas columnas en BD red")
+            
+            print("✅ Conectado exitosamente a base de datos de red")
             return True
             
+        except sqlite3.OperationalError as e:
+            print(f"❌ Error operacional conectando a BD red: {e}")
+            return False
         except Exception as e:
-            print(f"❌ Error conectando a BD red: {e}")
+            print(f"❌ Error inesperado conectando a BD red: {e}")
             return False
     
     def sincronizar_manual(self):

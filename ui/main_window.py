@@ -24,6 +24,7 @@ from PyQt5.QtGui import QDesktopServices, QTextDocument, QTextCursor, QTextCharF
 # ✅ NUEVAS IMPORTACIONES PARA SINCRONIZACIÓN
 from core.sync_manager import SyncManager
 from config.config_manager import obtener_estado_sincronizacion, actualizar_ultima_sincronizacion
+from core.bien_manager import BienManager  # ← ✅ CORRECTO
 
 # ✅ IMPORTS ABSOLUTOS (ahora funcionarán)
 from database.db_manager import DB
@@ -48,6 +49,7 @@ class VentanaPrincipal(QMainWindow):
         self.status_bar = None
         self._status_widgets = []
         self.sync_manager = None  # ← ¡IMPORTANTE!
+        self.bien_manager = None  # ← ¡AGREGAR ESTA LÍNEA!
         
         # ✅ SEGUNDO: Configurar UI completa primero
         self._inicializar_configuracion()
@@ -55,6 +57,7 @@ class VentanaPrincipal(QMainWindow):
         
         # ✅ TERCERO: Ahora sí inicializar SyncManager (DESPUÉS del setup_ui)
         self.sync_manager = SyncManager(db)
+        self.bien_manager = BienManager(db)  # ← ¡AGREGAR ESTA LÍNEA CRÍTICA!
         
         # ✅ CUARTO: Conectar señales (ahora todo existe)
         self.sync_manager.sincronizacion_iniciada.connect(self._on_sincronizacion_iniciada)
@@ -69,6 +72,10 @@ class VentanaPrincipal(QMainWindow):
         # Cargar datos iniciales
         self.cargar_bienes()
         self.cargar_movimientos()
+        #✅ VERIFICACIÓN FINAL
+        print("✅ Sistema completamente inicializado:")
+        print(f"   - sync_manager: {'✅' if self.sync_manager else '❌'}")
+        print(f"   - bien_manager: {'✅' if self.bien_manager else '❌'}")
         
     def _inicializar_configuracion(self):
         """Configuración inicial de la ventana"""
@@ -1022,9 +1029,24 @@ class VentanaPrincipal(QMainWindow):
     # ========== MÉTODOS DE FILTROS AVANZADOS ==========
 
     def aplicar_filtros_avanzados(self, filtros):
-        """Aplica filtros avanzados REALES usando BienManager"""
+        """Aplica filtros avanzados REALES usando BienManager - VERSIÓN CORREGIDA"""
         try:
             print(f"🎯 Filtros recibidos en main_window: {filtros}")
+            
+            # ✅ VERIFICACIÓN CRÍTICA: ¿bien_manager existe?
+            if not hasattr(self, 'bien_manager') or self.bien_manager is None:
+                print("❌ ERROR CRÍTICO: bien_manager no está inicializado")
+                print("🔄 Intentando inicializar bien_manager...")
+                
+                # ✅ CORREGIDO: Importar desde core/
+                try:
+                    from core.bien_manager import BienManager  # ← ¡CORREGIDO!
+                    self.bien_manager = BienManager(self.db)
+                    print("✅ bien_manager inicializado exitosamente desde core/")
+                except Exception as init_error:
+                    print(f"❌ No se pudo inicializar bien_manager: {init_error}")
+                    self.status_bar.showMessage("❌ Error: Sistema no inicializado correctamente")
+                    return
             
             # Guardar filtros activos
             self.filtros_activos = filtros
@@ -1035,7 +1057,7 @@ class VentanaPrincipal(QMainWindow):
                 self.status_bar.showMessage("✅ Todos los filtros limpiados")
                 return
             
-            # Usar BienManager para aplicar filtros
+            # ✅ USAR BienManager para aplicar filtros (AHORA SEGURO)
             bienes_filtrados = self.bien_manager.buscar_bienes(filtros)
             
             # Actualizar la tabla con los resultados filtrados
