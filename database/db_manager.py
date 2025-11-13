@@ -683,6 +683,78 @@ class DB:
         except Exception as e:
             print(f"Error verificando existencia: {e}")
             return False
+    def obtener_bien_por_id(self, bien_id):
+        """Obtiene un bien por su ID - PARA EL GENERADOR DE ACTAS"""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM bienes WHERE id = ?", (bien_id,))
+            resultado = cur.fetchone()
+            
+            if resultado:
+                columnas = [desc[0] for desc in cur.description]
+                return dict(zip(columnas, resultado))
+            return None
+        except Exception as e:
+            print(f"❌ Error obteniendo bien por ID: {e}")
+            return None
+
+    def obtener_movimientos_por_bien(self, bien_id):
+        """Obtiene todos los movimientos de un bien específico para el timeline"""
+        try:
+            cur = self.conn.cursor()
+            query = """
+                SELECT 
+                    m.id,
+                    m.tipo,
+                    m.fecha,
+                    m.responsable,
+                    m.responsable_nombre,
+                    m.responsable_apellido, 
+                    m.responsable_dni_cuit,
+                    m.responsable_institucional,
+                    m.observaciones,
+                    m.archivo_path,
+                    m.numero_transferencia,
+                    b.ficha,
+                    b.tipo as tipo_bien,
+                    b.marca,
+                    b.modelo,
+                    b.serie
+                FROM movimientos m
+                JOIN bienes_movimientos bm ON m.id = bm.id_movimiento
+                JOIN bienes b ON bm.id_bien = b.id
+                WHERE bm.id_bien = ?
+                ORDER BY m.fecha DESC
+            """
+            cur.execute(query, (bien_id,))
+            movimientos = cur.fetchall()
+            
+            # Convertir a lista de diccionarios
+            resultado = []
+            for mov in movimientos:
+                resultado.append(dict(mov))
+            
+            cur.close()
+            return resultado
+            
+        except Exception as e:
+            print(f"❌ Error obteniendo movimientos del bien {bien_id}: {e}")
+            return []
+        
+    def obtener_movimiento_por_id(self, movimiento_id):
+        """Obtiene un movimiento por su ID"""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM movimientos WHERE id = ?", (movimiento_id,))
+            resultado = cur.fetchone()
+            
+            if resultado:
+                columnas = [desc[0] for desc in cur.description]
+                return dict(zip(columnas, resultado))
+            return None
+        except Exception as e:
+            print(f"❌ Error obteniendo movimiento por ID: {e}")
+            return None
 
     def get_estadisticas(self):
         """Obtiene estadísticas del inventario con manejo seguro de cursor"""

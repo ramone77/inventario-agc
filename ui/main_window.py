@@ -599,6 +599,26 @@ class VentanaPrincipal(QMainWindow):
         """)
 
         btn_columnas = QPushButton("⚙️ Columnas Bienes")
+        # ✅ NUEVO BOTÓN: GENERAR ACTA
+        btn_generar_acta = QPushButton("📋 Generar Acta")
+        btn_generar_acta.clicked.connect(self.generar_acta_seleccionado)
+        btn_generar_acta.setStyleSheet("""
+            QPushButton { 
+                background-color: #9b59b6; 
+                color: white; 
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #8e44ad;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+            }
+        """)
+        btn_generar_acta.setToolTip("Generar acta para el bien seleccionado")
         btn_columnas.clicked.connect(self.mostrar_configuracion_columnas)
         btn_columnas.setStyleSheet("""
             QPushButton { 
@@ -615,6 +635,7 @@ class VentanaPrincipal(QMainWindow):
         controles_layout.addWidget(btn_exportar_excel)
         controles_layout.addWidget(btn_exportar_pdf)
         controles_layout.addWidget(btn_columnas)
+        controles_layout.addWidget(btn_generar_acta)
         controles_layout.addStretch()
 
         filtros_layout.addLayout(controles_layout)
@@ -1981,3 +2002,51 @@ class VentanaPrincipal(QMainWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, "❌ Error", f"Error al exportar movimientos PDF: {str(e)}")
+
+    def generar_acta_seleccionado(self):
+        """Genera acta para el bien seleccionado en la tabla"""
+        try:
+            # Obtener fila seleccionada
+            fila_seleccionada = self.tabla_bienes.currentRow()
+            if fila_seleccionada == -1:
+                QMessageBox.warning(self, "Generar Acta", "❌ Por favor, selecciona un bien de la tabla")
+                return
+            
+            # Obtener datos del bien seleccionado
+            ficha = self.tabla_bienes.item(fila_seleccionada, 0).text()  # Columna FICHA
+            
+            # Buscar el bien completo en la base de datos
+            bien = self.db.obtener_bien_por_ficha(ficha)
+            if not bien:
+                QMessageBox.warning(self, "Generar Acta", f"❌ No se encontró el bien con ficha: {ficha}")
+                return
+            
+            # Determinar tipo de acta automáticamente
+            estado = bien.get('estado', '').lower()
+            if estado in ['asignado', 'en uso']:
+                tipo_acta = "entrega"
+            else:
+                tipo_acta = "recepcion"
+            
+            # Generar acta
+            from generador_actas import GeneradorActas
+            generador = GeneradorActas()
+            
+            if tipo_acta == "entrega":
+                ruta_acta = generador.generar_acta_entrega(bien, self.usuario_actual['id'])
+            else:
+                ruta_acta = generador.generar_acta_recepcion(bien, self.usuario_actual['id'])
+            
+            if ruta_acta and not ruta_acta.startswith('❌'):
+                QMessageBox.information(self, "✅ Éxito", 
+                                    f"Acta de {tipo_acta.upper()} generada:\n{ruta_acta}\n\n"
+                                    f"📁 Guardada en: actas_generadas/")
+                
+                # Abrir el archivo generado
+                import os
+                os.startfile(ruta_acta)  # Solo Windows
+            else:
+                QMessageBox.critical(self, "❌ Error", f"No se pudo generar el acta:\n{ruta_acta}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"Error generando acta:\n{str(e)}")
