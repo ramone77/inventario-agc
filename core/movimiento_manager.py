@@ -35,6 +35,10 @@ class MovimientoManager:
                 # 3️⃣ TERCERO: Guardar ruta del acta en el movimiento
                 datos_movimiento['archivo_path'] = ruta_acta
                 print(f"✅ Acta generada: {ruta_acta}")
+                # ✅ NUEVO: Abrir carpeta de actas
+                self._abrir_carpeta_actas(ruta_acta)
+                # ✅ NUEVO: Preguntar si quiere subir acta firmada
+                self._preguntar_subir_acta_firmada(ruta_acta)
             else:
                 datos_movimiento['archivo_path'] = ""
                 print(f"⚠️ No se pudo generar acta: {ruta_acta}")
@@ -92,7 +96,58 @@ class MovimientoManager:
         except Exception as e:
             print(f"❌ Error generando acta automática: {e}")
             return f"❌ Error: {str(e)}"
-    
+        
+    def _abrir_carpeta_actas(self, ruta_acta):
+        """Abre la carpeta de actas generadas en el explorador"""
+        try:
+            import os
+            import platform
+            import subprocess
+            
+            carpeta_actas = os.path.dirname(ruta_acta)
+            
+            sistema = platform.system()
+            if sistema == "Windows":
+                os.startfile(carpeta_actas)
+            elif sistema == "Darwin":  # macOS
+                subprocess.run(["open", carpeta_actas])
+            else:  # Linux
+                subprocess.run(["xdg-open", carpeta_actas])
+                
+            print(f"📁 Carpeta de actas abierta: {carpeta_actas}")
+            
+        except Exception as e:
+            print(f"⚠️ No se pudo abrir la carpeta: {e}")
+
+    def _preguntar_subir_acta_firmada(self, ruta_acta):
+        """Pregunta si quiere subir el acta firmada"""
+        try:
+            from PyQt5.QtWidgets import QMessageBox, QFileDialog
+            import shutil
+            
+            respuesta = QMessageBox.question(
+                None,  # Usar None para que sea diálogo global
+                "Acta Generada",
+                "¿Querés subir el acta firmada ahora?\n\n"
+                "• Sí: Seleccioná el PDF firmado\n"
+                "• No: Podés subirlo después desde el historial",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if respuesta == QMessageBox.Yes:
+                # Seleccionar PDF firmado
+                path, _ = QFileDialog.getOpenFileName(
+                    None, "Seleccionar Acta Firmada", "", "PDF (*.pdf)"
+                )
+                if path:
+                    # Reemplazar el acta generada por la firmada
+                    shutil.copy(path, ruta_acta)
+                    print(f"✅ Acta firmada subida: {ruta_acta}")
+                    
+        except Exception as e:
+            print(f"⚠️ Error en diálogo acta firmada: {e}")
+        
     def obtener_movimientos_detallados(self):
         """Obtiene movimientos con información completa"""
         return self.db.get_movimientos_detallados()

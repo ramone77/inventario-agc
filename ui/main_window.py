@@ -44,7 +44,7 @@ class VentanaPrincipal(QMainWindow):
         super().__init__()
         self.db = db
         self.usuario_actual = usuario_actual
-        
+               
         # ✅ PRIMERO: Inicializar atributos críticos como None
         self.status_bar = None
         self._status_widgets = []
@@ -650,6 +650,8 @@ class VentanaPrincipal(QMainWindow):
         self.tabla_bienes = QTableWidget()
         self.configurar_columnas_tabla()
         layout.addWidget(self.tabla_bienes)
+        # ✅ AGREGAR ESTA LÍNEA JUSTO DESPUÉS DE CREAR LA TABLA:
+        self.tabla_bienes.doubleClicked.connect(self.mostrar_historial_bien)
 
         # PAGINACIÓN
         paginacion_layout = QHBoxLayout()
@@ -986,6 +988,12 @@ class VentanaPrincipal(QMainWindow):
                             
                             if (estado == "en depósito" or estado == "stock") and not (nombre.strip() or apellido.strip()):
                                 valor = "🟢 Disponible"
+                            elif estado == "asignado":
+                                valor = "🔵 Asignado"
+                            elif estado == "en reparación":
+                                valor = "🟡 En reparación" 
+                            elif estado == "baja definitiva":
+                                valor = "🔴 Baja"
                         
                         self.tabla_bienes.setItem(i, col_idx, QTableWidgetItem(str(valor)))
                         col_idx += 1
@@ -1125,7 +1133,12 @@ class VentanaPrincipal(QMainWindow):
     def abrir_formulario_movimiento(self):
         """Abre el formulario de movimientos"""
         try:
-            dialog = MovimientoDialog(self.db, self)
+            # ❌ ANTES:
+            # dialog = MovimientoDialog(self.db, self)
+            
+            # ✅ AHORA: Pasar usuario_actual
+            dialog = MovimientoDialog(self.db, self.usuario_actual, self)
+            
             if dialog.exec_() == QDialog.Accepted:
                 self.cargar_movimientos()
                 self.cargar_bienes()
@@ -2003,6 +2016,31 @@ class VentanaPrincipal(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "❌ Error", f"Error al exportar movimientos PDF: {str(e)}")
 
+    def mostrar_historial_bien(self, index):
+        """Muestra el historial del bien al hacer doble click - VERSIÓN CORREGIDA"""
+        try:
+            fila = index.row()
+            if fila >= 0:
+                # Obtener ficha del bien (columna 0 - FICHA)
+                ficha = self.tabla_bienes.item(fila, 0).text()
+                
+                print(f"🎯 Doble click en fila {fila}, ficha: {ficha}")
+                
+                # Buscar el bien completo por ficha
+                bien = self.db.obtener_bien_por_ficha(ficha)
+                if bien:
+                    print(f"✅ Bien encontrado: ID {bien['id']} - {bien['ficha']} - {bien['tipo']}")
+                    
+                    # Abrir diálogo de historial
+                    from .dialogs.historial_dialog import HistorialDialog
+                    dialog = HistorialDialog(self.db, bien, self)
+                    dialog.exec_()
+                else:
+                    QMessageBox.warning(self, "Historial", f"No se encontró el bien con ficha: {ficha}")
+                    
+        except Exception as e:
+            print(f"❌ Error mostrando historial: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo abrir el historial:\n{str(e)}")
     def generar_acta_seleccionado(self):
         """Genera acta para el bien seleccionado en la tabla"""
         try:

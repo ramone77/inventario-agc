@@ -18,14 +18,19 @@ from PyQt5.QtGui import QIntValidator, QDoubleValidator
 class MovimientoDialog(QDialog):
     """Diálogo mejorado para gestión de movimientos - VERSIÓN MODULAR"""
     
-    def __init__(self, db, parent=None):
+    def __init__(self, db, usuario_actual, parent=None):  # ← AGREGAR usuario_actual
         super().__init__(parent)
         self.db = db
-        self.archivo_path = ""  # ✅ Variable faltante agregada
+        self.usuario_actual = usuario_actual  # ← GUARDAR usuario
+        self.archivo_path = ""
         self.setWindowTitle("🔄 Gestión de Movimientos")
         self.setMinimumSize(900, 700)
         
         self._setup_ui()
+        if usuario_actual:
+            self.responsable_nombre.setText(usuario_actual.get('nombre', ''))
+            self.responsable_apellido.setText(usuario_actual.get('apellido', '')) 
+            self.responsable_cuit.setText(usuario_actual.get('dni_cuit', ''))
         self.aplicar_filtros()
 
     def _setup_ui(self):
@@ -367,13 +372,21 @@ class MovimientoDialog(QDialog):
             "numero_transferencia": self.numero_transferencia.text().strip()  # ← SOLO número transferencia
         }
         
-        # ❌ NO mezclar número de transferencia con observaciones
-        # Las observaciones quedan limpias, solo con el texto del usuario
-        
-        # Guardar
+        # ✅ NUEVO: USAR MOVIMIENTO MANAGER EN LUGAR DE DB DIRECTAMENTE
         try:
-            self.db.add_movimiento(mov_data, bienes_ids)
-            QMessageBox.information(self, "Éxito", "Movimiento registrado correctamente")
-            self.accept()
+            from core.movimiento_manager import MovimientoManager
+            movimiento_mgr = MovimientoManager(self.db)
+            
+            # Obtener ID del usuario actual
+            usuario_id = self.usuario_actual.get('id', 'SISTEMA')
+            
+            movimiento_id, mensaje = movimiento_mgr.crear_movimiento(mov_data, bienes_ids, usuario_id)
+            
+            if movimiento_id:
+                QMessageBox.information(self, "✅ Éxito", f"Movimiento registrado correctamente\n{mensaje}")
+                self.accept()
+            else:
+                QMessageBox.critical(self, "❌ Error", f"No se pudo guardar el movimiento:\n{mensaje}")
+                
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo guardar el movimiento:\n{e}")
+            QMessageBox.critical(self, "❌ Error", f"Error inesperado:\n{str(e)}")

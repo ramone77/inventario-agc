@@ -792,3 +792,18 @@ class DB:
         except Exception as e:
             print(f"Error en fetch_one: {e}")
             return None
+        
+    def obtener_bien_por_ficha(self, ficha):
+        """Obtiene un bien por su número de ficha"""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM bienes WHERE ficha = ?", (ficha,))
+            resultado = cur.fetchone()
+            
+            if resultado:
+                columnas = [desc[0] for desc in cur.description]
+                return dict(zip(columnas, resultado))
+            return None
+        except Exception as e:
+            print(f"❌ Error obteniendo bien por ficha: {e}")
+            return None
