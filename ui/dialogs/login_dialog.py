@@ -110,23 +110,33 @@ class LoginDialog(QDialog):
         layout.addWidget(info)
 
     def _cargar_usuarios(self):
-        """Carga la lista de usuarios desde la base de datos"""
+        """Carga la lista de usuarios desde la base de datos - VERSIÓN MEJORADA"""
         try:
             cursor = self.db.conn.cursor()
-            cursor.execute("SELECT id, nombre, rol FROM usuarios WHERE activo = 1")
+            cursor.execute("""
+                SELECT id, nombre, apellido, cargo, rol 
+                FROM usuarios 
+                WHERE activo = 1 
+                ORDER BY nombre, apellido
+            """)
             usuarios = cursor.fetchall()
             
+            self.combo_usuario.clear()
+            
             for usuario in usuarios:
-                texto = f"{usuario['id']} - {usuario['nombre']} ({usuario['rol']})"
+                # ✅ NUEVO FORMATO: "Apellido, Nombre - Cargo (Rol)"
+                texto = f"{usuario['apellido']}, {usuario['nombre']} - {usuario['cargo']} ({usuario['rol']})"
                 self.combo_usuario.addItem(texto, usuario['id'])
                 
+            print(f"✅ {len(usuarios)} usuarios cargados en login")
+                    
         except Exception as e:
-            print(f"Error cargando usuarios: {e}")
-            # Usuario por defecto
-            self.combo_usuario.addItem("mario - Mario Admin (admin)", "mario")
+            print(f"❌ Error cargando usuarios: {e}")
+            # Usuario por defecto como fallback
+            self.combo_usuario.addItem("Admin, Mario - Administrador (admin)", "mario")
 
     def _verificar_login(self):
-        """Verifica las credenciales del usuario"""
+        """Verifica las credenciales del usuario - VERSIÓN MEJORADA"""
         try:
             # Obtener usuario seleccionado
             usuario_id = self.combo_usuario.currentData()
@@ -136,24 +146,38 @@ class LoginDialog(QDialog):
                 QMessageBox.warning(self, "Error", "Por favor completa todos los campos")
                 return
             
-            # Verificar credenciales
+            # ✅ CONSULTA MEJORADA - OBTENER TODOS LOS CAMPOS
             cursor = self.db.conn.cursor()
-            cursor.execute(
-                "SELECT id, nombre, rol FROM usuarios WHERE id = ? AND password = ? AND activo = 1",
-                (usuario_id, password)
-            )
+            cursor.execute("""
+                SELECT id, nombre, apellido, cargo, dni_cuit, email, rol 
+                FROM usuarios 
+                WHERE id = ? AND password = ? AND activo = 1
+            """, (usuario_id, password))
             usuario = cursor.fetchone()
             
             if usuario:
                 self.usuario_actual = {
                     'id': usuario['id'],
                     'nombre': usuario['nombre'],
+                    'apellido': usuario['apellido'], 
+                    'cargo': usuario['cargo'],
+                    'dni_cuit': usuario['dni_cuit'],
+                    'email': usuario['email'],
                     'rol': usuario['rol']
                 }
-                print(f"✅ Usuario autenticado: {usuario['id']} ({usuario['rol']})")
+                
+                # ✅ ACTUALIZAR ÚLTIMO ACCESO
+                cursor.execute("""
+                    UPDATE usuarios 
+                    SET ultimo_acceso = datetime('now') 
+                    WHERE id = ?
+                """, (usuario_id,))
+                self.db.conn.commit()
+                
+                print(f"✅ Usuario autenticado: {usuario['apellido']}, {usuario['nombre']} ({usuario['rol']})")
                 self.accept()
             else:
-                QMessageBox.warning(self, "Error", "Credenciales incorrectas")
+                QMessageBox.warning(self, "Error", "Credenciales incorrectas o usuario inactivo")
                 self.input_password.clear()
                 self.input_password.setFocus()
                 

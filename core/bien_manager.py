@@ -77,27 +77,6 @@ class BienManager:
             print(f"❌ Error en buscar_bienes: {e}")
             return self.db.list_bienes()
 
-    def list_bienes_completos(self):
-    #Obtiene TODOS los bienes sin límite - PARA FILTROS"""
-        try:
-            cur = self.conn.cursor()
-            query = """
-                SELECT id, ficha, tipo, marca, modelo, serie, estado, prd, 
-                    nombre, apellido, dni_cuit, institucional,
-                    linea, sim, empresa, imei, descripcion, fecha_registro, 
-                    monto_original, anio_prd
-                FROM bienes 
-                ORDER BY fecha_registro DESC
-            """
-            cur.execute(query)
-            resultado = cur.fetchall()
-            cur.close()
-            print(f"✅ Obtenidos {len(resultado)} registros completos para filtros")
-            return resultado
-        except Exception as e:
-            print(f"❌ Error al listar bienes completos: {e}")
-            return []
-
     def _aplicar_filtros_manual(self, bienes, filtros):
         """Aplica TODOS los filtros manualmente - VERSIÓN CON LIMPIEZA"""
         if not filtros or not bienes:

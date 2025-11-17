@@ -12,13 +12,7 @@ from pathlib import Path
 import json
 
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal
-from database.db_manager import DB
-from config.config_manager import (
-    cargar_configuracion, 
-    actualizar_ultima_sincronizacion,
-    obtener_ruta_db_activa,
-    obtener_ruta_db_maestra
-)
+# from database.db_manager import DB  # ❌ COMENTADO TEMPORALMENTE
 
 
 class SyncManager(QObject):
@@ -29,7 +23,17 @@ class SyncManager(QObject):
     sincronizacion_completada = pyqtSignal(str, bool)  # mensaje, exito
     progreso_sincronizacion = pyqtSignal(int, str)  # porcentaje, estado
     conflicto_detectado = pyqtSignal(dict)  # datos del conflicto
-    
+
+    def _importar_config(self):
+        """Importa config_manager solo cuando se necesita"""
+        from config.config_manager import (
+            cargar_configuracion, 
+            actualizar_ultima_sincronizacion,
+            obtener_ruta_db_activa,
+            obtener_ruta_db_maestra
+        )
+        return cargar_configuracion, actualizar_ultima_sincronizacion, obtener_ruta_db_activa, obtener_ruta_db_maestra
+
     def __init__(self, db_local):
         super().__init__()
         self.db_local = db_local
@@ -97,6 +101,7 @@ class SyncManager(QObject):
         
     def _inicializar_sincronizador(self):
         """Inicializa el sistema de sincronización"""
+        cargar_configuracion, _, _, _ = self._importar_config()
         config = cargar_configuracion()
         
         if config["auto_sincronizar"]:
@@ -107,7 +112,9 @@ class SyncManager(QObject):
     def conectar_db_red(self):
         """Intenta conectar a la base de datos de red - VERSIÓN MEJORADA"""
         try:
+            _, _, _, obtener_ruta_db_maestra = self._importar_config()
             ruta_red = obtener_ruta_db_maestra()
+            cargar_configuracion, _, _, _ = self._importar_config()
             config = cargar_configuracion()
             
             print(f"🔍 Verificando acceso a red: {os.path.dirname(ruta_red)}")
@@ -124,6 +131,7 @@ class SyncManager(QObject):
                 return False
             
             # ✅ CONECTAR A LA BASE DE DATOS DE RED
+            from database.db_manager import DB
             self.db_red = DB(ruta_red, config["actas_folder_red"])
             
             # ✅ NUEVO: CREAR COLUMNAS DE SINCRONIZACIÓN SI FALTAN
@@ -160,6 +168,7 @@ class SyncManager(QObject):
     
     def _debe_sincronizar(self):
         """Verifica si debe realizar sincronización automática"""
+        cargar_configuracion, _, _, _ = self._importar_config()
         config = cargar_configuracion()
         
         if not config["auto_sincronizar"]:
@@ -174,6 +183,7 @@ class SyncManager(QObject):
     def _verificar_conexion_red(self):
         """Verifica si hay conexión a la red"""
         try:
+            _, _, _, obtener_ruta_db_maestra = self._importar_config()
             ruta_red = obtener_ruta_db_maestra()
             return os.path.exists(os.path.dirname(ruta_red))
         except:
@@ -207,6 +217,7 @@ class SyncManager(QObject):
             self.progreso_sincronizacion.emit(100, "Completando...")
             
             # 5. Actualizar estado
+            _, actualizar_ultima_sincronizacion, _, _ = self._importar_config()
             actualizar_ultima_sincronizacion()
             
             # 6. Reportar resultados
@@ -234,6 +245,7 @@ class SyncManager(QObject):
             }
             
             # Obtener última sincronización
+            cargar_configuracion, _, _, _ = self._importar_config()
             config = cargar_configuracion()
             ultima_sync = config.get("ultima_sincronizacion")
             
@@ -268,6 +280,7 @@ class SyncManager(QObject):
             self._crear_backup_local()
             
             # Copiar archivo completo de red a local
+            _, _, obtener_ruta_db_activa, obtener_ruta_db_maestra = self._importar_config()
             ruta_red = obtener_ruta_db_maestra()
             ruta_local = obtener_ruta_db_activa()
             
@@ -358,6 +371,7 @@ class SyncManager(QObject):
                 "movimientos_subidos": 0
             }
             
+            cargar_configuracion, _, _, _ = self._importar_config()
             config = cargar_configuracion()
             ultima_sync = config.get("ultima_sincronizacion")
             
@@ -461,6 +475,7 @@ class SyncManager(QObject):
     def _crear_backup_local(self):
         """Crea backup de la base local antes de sincronizar"""
         try:
+            _, _, obtener_ruta_db_activa, _ = self._importar_config()
             ruta_local = obtener_ruta_db_activa()
             backup_dir = os.path.join(os.path.dirname(ruta_local), "backups")
             os.makedirs(backup_dir, exist_ok=True)
@@ -506,6 +521,7 @@ class SyncManager(QObject):
     
     def obtener_estado(self):
         """Obtiene estado actual del sincronizador"""
+        cargar_configuracion, _, _, _ = self._importar_config()
         config = cargar_configuracion()
         
         return {

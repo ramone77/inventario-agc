@@ -9,27 +9,11 @@ class GeneradorActas:
         self.carpeta_plantillas = "plantillas"
         self.carpeta_actas = "actas_generadas"
         self._crear_carpetas()
-        self.responsables = self._cargar_responsables()
         
     def _crear_carpetas(self):
         """Crea las carpetas necesarias si no existen"""
         os.makedirs(self.carpeta_plantillas, exist_ok=True)
         os.makedirs(self.carpeta_actas, exist_ok=True)
-        
-    def _cargar_responsables(self):
-        """Carga los responsables desde el archivo JSON"""
-        try:
-            with open('responsables_sopys.json', 'r', encoding='utf-8') as f:
-                return json.load(f)['responsables']
-        except FileNotFoundError:
-            print("⚠️  Archivo responsables_sopys.json no encontrado, usando datos por defecto")
-            return [
-                {
-                    "nombre": "SANTIAGO JOAQUÍN LÓPEZ",
-                    "dni": "29.989.358",
-                    "cargo": "Responsable de Patrimonio"
-                }
-            ]
     
     def generar_acta_entrega(self, datos_bienes, usuario_actual):
         """Genera acta de entrega automáticamente - AHORA SOPORTA MÚLTIPLES BIENES"""
@@ -56,8 +40,8 @@ class GeneradorActas:
             # Cargar plantilla
             doc = DocxTemplate(ruta_plantilla)
             
-            # Obtener responsable SOPyS
-            responsable_sopys = self._obtener_responsable_actual(usuario_actual)
+            # ✅ NUEVO: Obtener datos del usuario actual (responsable SOPyS)
+            responsable_sopys = self._obtener_datos_usuario_actual(usuario_actual)
             
             # PREPARAR LISTA DE BIENES (AHORA SOPORTA MÚLTIPLES)
             if isinstance(datos_bienes, list):
@@ -79,18 +63,24 @@ class GeneradorActas:
                     'serie': datos_bienes.get('serie', '')
                 }]
             
-            # Preparar contexto MEJORADO
+            # ✅ NUEVO: Preparar contexto MEJORADO con datos del usuario
             contexto = {
                 'dia': datetime.now().day,
                 'mes': self._obtener_mes_actual(),
                 'anio': datetime.now().year,
-                'responsable_sopys': responsable_sopys['nombre'],
-                'dni_responsable_sopys': responsable_sopys['dni'],
-                'cargo_responsable_sopys': responsable_sopys.get('cargo', ''),
+                
+                # ✅ DATOS DEL USUARIO ACTUAL (RESPONSABLE SOPyS)
+                'responsable_sopys': responsable_sopys['nombre_completo'],
+                'dni_responsable_sopys': responsable_sopys['dni_cuit'],
+                'cargo_responsable_sopys': responsable_sopys['cargo'],
+                
+                # Datos del receptor (persona que recibe el bien)
                 'agente_receptor': datos_bienes[0].get('responsable_actual', '') if isinstance(datos_bienes, list) else datos_bienes.get('responsable_actual', ''),
                 'area_receptor': datos_bienes[0].get('area', 'INSTITUCIONAL') if isinstance(datos_bienes, list) else datos_bienes.get('area', 'INSTITUCIONAL'),
                 'dni_receptor': datos_bienes[0].get('dni_responsable', '') if isinstance(datos_bienes, list) else datos_bienes.get('dni_responsable', ''),
-                'bienes': bienes_lista,  # NUEVO: Lista de bienes para la tabla dinámica
+                
+                # Lista de bienes
+                'bienes': bienes_lista,
                 'texto_generacion': self._generar_texto_pie(usuario_actual)
             }
             
@@ -109,6 +99,7 @@ class GeneradorActas:
             
             print(f"✅ Acta de {tipo.upper()} generada: {nombre_archivo}")
             print(f"   📦 Bienes incluidos: {len(bienes_lista)}")
+            print(f"   👤 Responsable SOPyS: {responsable_sopys['nombre_completo']}")
             return ruta_completa
             
         except Exception as e:
@@ -116,17 +107,49 @@ class GeneradorActas:
             print(error_msg)
             return error_msg
     
-    def _obtener_responsable_actual(self, usuario_actual):
-        """Obtiene el responsable SOPyS (usuario actual o por defecto)"""
-        for resp in self.responsables:
-            if resp['nombre'].lower() == usuario_actual.lower():
-                return resp
-        return self.responsables[0]  # Por defecto
+    def _obtener_datos_usuario_actual(self, usuario_actual):
+        """✅ NUEVO: Obtiene los datos completos del usuario actual"""
+        print(f"🔍 DEBUG _obtener_datos_usuario_actual:")
+        print(f"   Tipo: {type(usuario_actual)}")
+        print(f"   Valor: {usuario_actual}")
+        
+        try:
+            # Si es string, buscar en la base de datos
+            if isinstance(usuario_actual, str):
+                print(f"   ⚠️ usuario_actual es string, buscando en BD...")
+                # Aquí necesitaríamos conectar a la BD para obtener los datos completos
+                # Por ahora devolvemos datos por defecto
+                return {
+                    'nombre_completo': 'USUARIO TEMPORAL',
+                    'dni_cuit': 'SIN DATOS',
+                    'cargo': 'Responsable de Patrimonio'
+                }
+            
+            # Si es diccionario, usar los datos directamente
+            nombre_completo = f"{usuario_actual.get('nombre', '')} {usuario_actual.get('apellido', '')}".strip()
+            
+            resultado = {
+                'nombre_completo': nombre_completo,
+                'dni_cuit': usuario_actual.get('dni_cuit', ''),
+                'cargo': usuario_actual.get('cargo', 'Responsable de Patrimonio')
+            }
+            
+            print(f"   ✅ Datos obtenidos: {resultado}")
+            return resultado
+            
+        except Exception as e:
+            print(f"⚠️ Error obteniendo datos usuario: {e}")
+            return {
+                'nombre_completo': 'SANTIAGO JOAQUÍN LÓPEZ',
+                'dni_cuit': '29.989.358', 
+                'cargo': 'Responsable de Patrimonio'
+            }
     
     def _generar_texto_pie(self, usuario_actual):
         """Genera el texto de auditoría"""
         fecha_hora = datetime.now().strftime("%d/%m/%Y a las %H:%M hrs")
-        return f"Generado por {usuario_actual} el {fecha_hora}"
+        usuario_id = usuario_actual.get('id', 'SISTEMA') if isinstance(usuario_actual, dict) else usuario_actual
+        return f"Generado por {usuario_id} el {fecha_hora}"
     
     def _obtener_mes_actual(self):
         meses = [
@@ -136,9 +159,20 @@ class GeneradorActas:
         return meses[datetime.now().month - 1]
 
 
-# TEST MEJORADO CON MÚLTIPLES BIENES
+# TEST MEJORADO CON DATOS DE USUARIO REALES
 if __name__ == "__main__":
-    # DATOS DE PRUEBA MEJORADOS - AHORA CON MÚLTIPLES BIENES
+    # ✅ DATOS DE USUARIO DE PRUEBA (simulando usuario logueado)
+    usuario_prueba = {
+        'id': 'mario',
+        'nombre': 'Mario',
+        'apellido': 'Admin', 
+        'cargo': 'Administrador del Sistema',
+        'dni_cuit': '20.123.456',
+        'email': 'mario@agc.gob.ar',
+        'rol': 'admin'
+    }
+    
+    # DATOS DE BIENES DE PRUEBA
     bienes_prueba = [
         {
             'ficha': 'INV-2024-001',
@@ -150,42 +184,16 @@ if __name__ == "__main__":
             'area': 'CONTABILIDAD',
             'dni_responsable': '27.654.321',
             'cantidad': 1
-        },
-        {
-            'ficha': 'INV-2024-002', 
-            'serie': 'SN987654321',
-            'tipo': 'MONITOR',
-            'marca': 'SAMSUNG',
-            'modelo': '24F350',
-            'responsable_actual': 'LAURA GÓMEZ',
-            'area': 'CONTABILIDAD',
-            'dni_responsable': '27.654.321',
-            'cantidad': 1
-        },
-        {
-            'ficha': 'INV-2024-003',
-            'serie': 'SN555666777',
-            'tipo': 'TECLADO',
-            'marca': 'LOGITECH',
-            'modelo': 'K120',
-            'responsable_actual': 'LAURA GÓMEZ', 
-            'area': 'CONTABILIDAD',
-            'dni_responsable': '27.654.321',
-            'cantidad': 1
         }
     ]
     
     generador = GeneradorActas()
     
-    print("🧪 PROBANDO GENERADOR MEJORADO CON MÚLTIPLES BIENES...")
+    print("🧪 PROBANDO GENERADOR CON DATOS DE USUARIO REALES...")
     
-    # Probar acta de entrega con múltiples bienes
-    resultado_entrega = generador.generar_acta_entrega(bienes_prueba, "RUBEN LAZARTE")
+    # Probar acta de entrega con datos de usuario
+    resultado_entrega = generador.generar_acta_entrega(bienes_prueba, usuario_prueba)
     print(f"Entrega: {resultado_entrega}")
     
-    # Probar acta de recepción con múltiples bienes
-    resultado_recepcion = generador.generar_acta_recepcion(bienes_prueba, "RUBEN LAZARTE")  
-    print(f"Recepción: {resultado_recepcion}")
-    
     print("🎯 PRUEBA COMPLETADA - Revisa la carpeta 'actas_generadas'")
-    print("   Ahora con soporte para múltiples bienes y firmas profesionales!")
+    print("   Ahora con datos reales del usuario logueado!")

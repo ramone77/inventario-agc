@@ -18,20 +18,22 @@ from PyQt5.QtGui import QIntValidator, QDoubleValidator
 class MovimientoDialog(QDialog):
     """Diálogo mejorado para gestión de movimientos - VERSIÓN MODULAR"""
     
-    def __init__(self, db, usuario_actual, parent=None):  # ← AGREGAR usuario_actual
+    
+    def __init__(self, db, usuario_actual, parent=None):
         super().__init__(parent)
         self.db = db
-        self.usuario_actual = usuario_actual  # ← GUARDAR usuario
+        self.usuario_actual = usuario_actual
         self.archivo_path = ""
         self.setWindowTitle("🔄 Gestión de Movimientos")
-        self.setMinimumSize(900, 700)
-        
+        self.setMinimumSize(900, 700)        
         self._setup_ui()
-        if usuario_actual:
-            self.responsable_nombre.setText(usuario_actual.get('nombre', ''))
-            self.responsable_apellido.setText(usuario_actual.get('apellido', '')) 
-            self.responsable_cuit.setText(usuario_actual.get('dni_cuit', ''))
+        # ✅ CONECTAR CAMBIO DE TIPO DE MOVIMIENTO
+        self.tipo.currentTextChanged.connect(self._actualizar_visibilidad_boton)
+        # Actualizar visibilidad inicial
+        self._actualizar_visibilidad_boton()
         self.aplicar_filtros()
+
+
 
     def _setup_ui(self):
         """Configura la interfaz de usuario"""
@@ -111,6 +113,32 @@ class MovimientoDialog(QDialog):
         fila_institucional.addWidget(self.responsable_institucional)
         form_responsable.addRow(fila_institucional)
         
+        # ✅ NUEVO BOTÓN - SOLO PARA DEVOLUCIÓN (DENTRO del grupo)
+        self.btn_cargar_datos = QPushButton("📥 Cargar datos del bien seleccionado")
+        self.btn_cargar_datos.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                padding: 8px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+            }
+        """)
+        self.btn_cargar_datos.clicked.connect(self._cargar_datos_bien)
+        self.btn_cargar_datos.setVisible(False)  # Oculto por defecto
+        self.btn_cargar_datos.setToolTip("Carga automáticamente los datos del responsable del bien seleccionado")
+
+        # Agregar al formulario del grupo responsable
+        form_responsable.addRow(self.btn_cargar_datos)
+
+        # FINALMENTE agregar el grupo al layout principal
         layout.addWidget(grupo_responsable)
         
         # ===== FILTROS PARA BIENES =====
@@ -332,8 +360,52 @@ class MovimientoDialog(QDialog):
         
         self.actualizar_contador()
 
+    def _actualizar_visibilidad_boton(self):
+        """Muestra/oculta el botón según el tipo de movimiento"""
+        es_devolucion = (self.tipo.currentText() == "Devolución")
+        self.btn_cargar_datos.setVisible(es_devolucion)
+
+    def _cargar_datos_bien(self):
+        """Carga los datos del responsable del bien seleccionado"""
+        try:
+            items_seleccionados = self.lista_bienes.selectedItems()
+            if not items_seleccionados:
+                QMessageBox.warning(self, "Selección requerida", "Selecciona un bien primero")
+                return
+            
+            # Tomar el primer bien seleccionado
+            item = items_seleccionados[0]
+            bien_id = item.data(Qt.UserRole)
+            
+            # Obtener datos completos del bien
+            bien = self.db.obtener_bien_por_id(bien_id)
+            if not bien:
+                QMessageBox.warning(self, "Error", "No se pudieron obtener los datos del bien")
+                return
+            
+            # ✅ CARGAR DATOS EN LOS CAMPOS
+            self.responsable_nombre.setText(bien.get('nombre', ''))
+            self.responsable_apellido.setText(bien.get('apellido', ''))
+            self.responsable_cuit.setText(bien.get('dni_cuit', ''))
+            
+            # Buscar y seleccionar institucional en el combo
+            institucional_bien = bien.get('institucional', '')
+            if institucional_bien:
+                index = self.responsable_institucional.findText(institucional_bien)
+                if index >= 0:
+                    self.responsable_institucional.setCurrentIndex(index)
+                else:
+                    # Si no existe, agregarlo
+                    self.responsable_institucional.addItem(institucional_bien)
+                    self.responsable_institucional.setCurrentText(institucional_bien)
+            
+            QMessageBox.information(self, "✅ Éxito", "Datos del bien cargados correctamente")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"Error cargando datos:\n{str(e)}")
+    
     def guardar(self):
-        """Guarda el movimiento - VERSIÓN CORREGIDA CON DATOS SEPARADOS"""
+        """Guarda el movimiento - VERSIÓN CORREGIDA CON DATOS COMPLETOS"""
         # Validaciones
         bienes_ids = [item.data(Qt.UserRole) for item in self.lista_bienes.selectedItems()]
         if not bienes_ids:
@@ -341,46 +413,41 @@ class MovimientoDialog(QDialog):
             return
         
         if not all([self.responsable_nombre.text(), self.responsable_apellido.text(), self.responsable_institucional.currentText()]):
-            QMessageBox.warning(self, "Datos incompletos", "Completá nombre, apellido e institucional del responsable.")
+            QMessageBox.warning(self, "Datos incompletos", "Completa nombre, apellido e institucional del responsable.")
             return
         
-        # Validar fecha de entrega - FORMATO ARGENTINO
+        # Validar fecha
         try:
-            # Intentar parsear como DD/MM/AAAA
             fecha_str = self.fecha_entrega.text().strip()
             fecha_dt = datetime.strptime(fecha_str, "%d/%m/%Y")
-            # Guardar en formato YYYY-MM-DD para la BD
             fecha_bd = fecha_dt.strftime("%Y-%m-%d")
         except ValueError:
             QMessageBox.warning(self, "Fecha inválida", "La fecha de entrega debe tener formato DD/MM/AAAA (ej: 25/12/2024)")
             return
         
-        # Preparar datos del responsable - SOLO NOMBRE Y APELLIDO para campo responsable
+        # Preparar datos del movimiento
         responsable_completo = f"{self.responsable_nombre.text()} {self.responsable_apellido.text()}"
         
-        # Preparar datos del movimiento - VERSIÓN CORREGIDA CON DATOS SEPARADOS
         mov_data = {
             "tipo": self.tipo.currentText(),
-            "fecha": fecha_bd,  # ← Fecha en formato BD (YYYY-MM-DD)
-            "responsable": responsable_completo,  # ← SOLO nombre + apellido (compatibilidad)
+            "fecha": fecha_bd,
+            "responsable": responsable_completo,
             "responsable_nombre": self.responsable_nombre.text().strip(),
             "responsable_apellido": self.responsable_apellido.text().strip(),
             "responsable_dni_cuit": self.responsable_cuit.text().strip(),
             "responsable_institucional": self.responsable_institucional.currentText(),
-            "observaciones": self.observaciones.toPlainText().strip(),  # ← SOLO texto del usuario
-            "archivo_path": self.archivo_path,  # ← Usando la variable que ahora existe
-            "numero_transferencia": self.numero_transferencia.text().strip()  # ← SOLO número transferencia
+            "observaciones": self.observaciones.toPlainText().strip(),
+            "archivo_path": self.archivo_path,
+            "numero_transferencia": self.numero_transferencia.text().strip()
         }
         
-        # ✅ NUEVO: USAR MOVIMIENTO MANAGER EN LUGAR DE DB DIRECTAMENTE
+        # ✅ CORREGIDO: Pasar usuario_actual completo (no solo el ID)
         try:
             from core.movimiento_manager import MovimientoManager
             movimiento_mgr = MovimientoManager(self.db)
             
-            # Obtener ID del usuario actual
-            usuario_id = self.usuario_actual.get('id', 'SISTEMA')
-            
-            movimiento_id, mensaje = movimiento_mgr.crear_movimiento(mov_data, bienes_ids, usuario_id)
+            # ✅ CORRECCIÓN: Pasar self.usuario_actual completo
+            movimiento_id, mensaje = movimiento_mgr.crear_movimiento(mov_data, bienes_ids, self.usuario_actual)
             
             if movimiento_id:
                 QMessageBox.information(self, "✅ Éxito", f"Movimiento registrado correctamente\n{mensaje}")

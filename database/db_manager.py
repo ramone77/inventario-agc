@@ -81,24 +81,30 @@ class DB:
             raise e
 
     def _cambiar_a_modo_local(self):
-        """Cambia automáticamente a modo local"""
+        """Cambia automáticamente a modo local - VERSIÓN SIN IMPORTS CIRCULARES"""
         print("🔄 Cambiando a MODO LOCAL...")
         
-        # Importar aquí para evitar circular imports
-        from ..config.config_manager import cargar_configuracion, guardar_configuracion
+        # Usar ruta local por defecto directamente
+        local_db = "inventario_local.db"
+        local_actas = "actas_local"
         
-        # Cargar configuración actual
-        config_actual = cargar_configuracion()
+        print(f"📍 Nueva ruta local: {local_db}")
         
-        # Cambiar a modo local
-        config_actual["modo_local"] = True
-        guardar_configuracion(config_actual)
-        
-        print("✅ Cambiado a MODO LOCAL. Reiniciando aplicación...")
-        
-        # Reiniciar aplicación
-        QApplication.quit()
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        try:
+            self.conn = sqlite3.connect(local_db, check_same_thread=False, timeout=30)
+            self.conn.row_factory = sqlite3.Row
+            print(f"✅ Conectado exitosamente a base de datos local")
+            self._init_db()
+            
+            # Mostrar mensaje al usuario
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(None, "Modo Local", 
+                                "Se cambió automáticamente a modo local.\n\n"
+                                "Los datos se guardarán localmente hasta que se restablezca la conexión de red.")
+                                
+        except Exception as e:
+            print(f"❌ Error crítico: No se pudo conectar ni siquiera en modo local: {e}")
+            raise e
 
     def _init_db(self):
         """Inicializa las tablas de la base de datos - VERSIÓN MEJORADA"""
@@ -134,27 +140,39 @@ class DB:
         """)
         print("✅ Tabla 'bienes' verificada")
 
+        # ✅ ESTRUCTURA MEJORADA (COMPLETA)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 id TEXT PRIMARY KEY,
-                nombre TEXT,
-                password TEXT,
-                rol TEXT,
-                activo INTEGER DEFAULT 1
+                nombre TEXT NOT NULL,
+                apellido TEXT NOT NULL,
+                cargo TEXT NOT NULL,
+                dni_cuit TEXT UNIQUE,
+                email TEXT,
+                password TEXT NOT NULL,
+                rol TEXT NOT NULL DEFAULT 'operador',
+                activo INTEGER DEFAULT 1,
+                fecha_creacion TEXT DEFAULT CURRENT_TIMESTAMP,
+                ultimo_acceso TEXT,
+                usuario_creacion TEXT
             )
         """)
+        self._actualizar_estructura_usuarios()
         print("✅ Tabla 'usuarios' verificada")
         
-        # Insertar usuario de prueba si no existe
+        # ✅ USUARIO DE PRUEBA MEJORADO
         cur.execute("SELECT COUNT(*) FROM usuarios WHERE id = 'mario'")
         if cur.fetchone()[0] == 0:
             cur.execute(
-                "INSERT INTO usuarios (id, nombre, password, rol) VALUES (?, ?, ?, ?)",
-                ("mario", "Mario Admin", "1234", "admin")
+                """INSERT INTO usuarios 
+                (id, nombre, apellido, cargo, dni_cuit, email, password, rol, usuario_creacion) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("mario", "Mario", "Admin", "Administrador del Sistema", 
+                "20123456789", "mario@agc.gob.ar", "1234", "admin", "sistema")
             )
-            print("✅ Usuario de prueba 'mario' creado")
+            print("✅ Usuario de prueba 'mario' creado con datos completos")
         
- # ✅ NUEVA LÍNEA: Verificar y agregar columnas de asignación
+        # ✅ NUEVA LÍNEA: Verificar y agregar columnas de asignación
         self.verificar_y_agregar_columnas_asignacion()
         
         # SEGUNDO: Agregar columnas faltantes si es necesario
@@ -236,6 +254,38 @@ class DB:
                     print(f"⚠️  No se pudo agregar columna '{columna}': {e}")
         
         cur.close()
+
+    def _actualizar_estructura_usuarios(self):
+        """Actualiza la estructura de la tabla usuarios si es necesario"""
+        try:
+            cur = self.conn.cursor()
+            
+            # Verificar columnas existentes
+            cur.execute("PRAGMA table_info(usuarios)")
+            columnas_existentes = [col[1] for col in cur.fetchall()]
+            
+            # Columnas nuevas que necesitamos
+            columnas_necesarias = [
+                'apellido', 'cargo', 'dni_cuit', 'email', 
+                'fecha_creacion', 'ultimo_acceso', 'usuario_creacion'
+            ]
+            
+            # Agregar columnas faltantes
+            for columna in columnas_necesarias:
+                if columna not in columnas_existentes:
+                    try:
+                        if columna in ['fecha_creacion', 'ultimo_acceso']:
+                            cur.execute(f"ALTER TABLE usuarios ADD COLUMN {columna} TEXT")
+                        else:
+                            cur.execute(f"ALTER TABLE usuarios ADD COLUMN {columna} TEXT")
+                        print(f"✅ Columna '{columna}' agregada a usuarios")
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
+            
+            self.conn.commit()
+            
+        except Exception as e:
+            print(f"❌ Error actualizando estructura de usuarios: {e}")
 
     def _agregar_columnas_faltantes(self):
         """Agrega columnas faltantes a la tabla bienes de forma segura"""

@@ -44,20 +44,20 @@ class VentanaPrincipal(QMainWindow):
         super().__init__()
         self.db = db
         self.usuario_actual = usuario_actual
-               
-        # ✅ PRIMERO: Inicializar atributos críticos como None
+        
+        # ✅ INICIALIZAR MANAGERS PRIMERO
+        self.bien_manager = BienManager(db)  # ← PRIMERO esto
+        self.sync_manager = SyncManager(db)   # ← LUEGO esto
+        
         self.status_bar = None
         self._status_widgets = []
-        self.sync_manager = None  # ← ¡IMPORTANTE!
-        self.bien_manager = None  # ← ¡AGREGAR ESTA LÍNEA!
         
-        # ✅ SEGUNDO: Configurar UI completa primero
+        # ✅ LUEGO configurar UI
         self._inicializar_configuracion()
-        self._setup_ui()  # ← Esto crea la status_bar!
+        self._setup_ui()
         
-        # ✅ TERCERO: Ahora sí inicializar SyncManager (DESPUÉS del setup_ui)
-        self.sync_manager = SyncManager(db)
-        self.bien_manager = BienManager(db)  # ← ¡AGREGAR ESTA LÍNEA CRÍTICA!
+        # ✅ FINALMENTE conectar señales
+        self.sync_manager.sincronizacion_iniciada.connect(self._on_sincronizacion_iniciada)
         
         # ✅ CUARTO: Conectar señales (ahora todo existe)
         self.sync_manager.sincronizacion_iniciada.connect(self._on_sincronizacion_iniciada)
@@ -298,6 +298,33 @@ class VentanaPrincipal(QMainWindow):
         btn_config_avanzada.clicked.connect(self.mostrar_configuracion_avanzada)
         btn_config_avanzada.setToolTip("Configurar modo de trabajo y sincronización")
         toolbar.addWidget(btn_config_avanzada)
+
+        # ✅ NUEVO: BOTÓN GESTIÓN USUARIOS (SOLO PARA ADMINS)
+        self.btn_gestion_usuarios = QPushButton("👥 Gestión Usuarios")
+        self.btn_gestion_usuarios.setStyleSheet("""
+            QPushButton {
+                background-color: #9b59b6;
+                color: white;
+                padding: 5px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #8e44ad;
+            }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+            }
+        """)
+        self.btn_gestion_usuarios.clicked.connect(self.mostrar_gestion_usuarios)
+        self.btn_gestion_usuarios.setToolTip("Gestionar usuarios del sistema (solo administradores)")
+        
+        # ✅ MOSTRAR SOLO SI ES ADMIN
+        self.btn_gestion_usuarios.setVisible(self.usuario_actual['rol'] == 'admin')
+        
+        toolbar.addWidget(self.btn_gestion_usuarios)
         
         # Espacio flexible
         toolbar.addWidget(QLabel(""))
@@ -319,6 +346,15 @@ class VentanaPrincipal(QMainWindow):
         
         # ✅ NUEVO: Actualizar estado inicial
         self._actualizar_estado_sincronizacion_ui()
+        
+    def mostrar_gestion_usuarios(self):
+        """Muestra el diálogo de gestión de usuarios"""
+        try:
+            from .dialogs.gestion_usuarios_dialog import GestionUsuariosDialog
+            dialog = GestionUsuariosDialog(self.db, self.usuario_actual, self)
+            dialog.exec_()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir gestión de usuarios:\n{str(e)}")        
 
     # ========== 🆕 MÉTODOS DE SINCRONIZACIÓN ==========
 
@@ -2069,11 +2105,12 @@ class VentanaPrincipal(QMainWindow):
             # Generar acta
             from generador_actas import GeneradorActas
             generador = GeneradorActas()
-            
+            print(f"🔍 DEBUG - usuario_actual completo:")
+            print(f"   {self.usuario_actual}")
             if tipo_acta == "entrega":
-                ruta_acta = generador.generar_acta_entrega(bien, self.usuario_actual['id'])
+                ruta_acta = generador.generar_acta_entrega(bien, self.usuario_actual)  # ← Sin ['id']
             else:
-                ruta_acta = generador.generar_acta_recepcion(bien, self.usuario_actual['id'])
+                ruta_acta = generador.generar_acta_recepcion(bien, self.usuario_actual)  # ← Sin ['id']
             
             if ruta_acta and not ruta_acta.startswith('❌'):
                 QMessageBox.information(self, "✅ Éxito", 
