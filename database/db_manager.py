@@ -720,19 +720,84 @@ class DB:
         finally:
             cur.close()
 
-    def bien_existe(self, ficha, tipo, serie):
-        """Verifica si un bien ya existe con manejo seguro de cursor"""
+    def bien_existe(self, ficha, tipo, marca, modelo, serie, imei=""):
+        """Verifica si un bien ya existe - VERSIÓN QUE IGNORA 'SIN SERIE'"""
         try:
-            # ✅ SIN CONTEXT MANAGER - MANUAL
             cur = self.conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM bienes WHERE ficha=? AND tipo=? AND serie=?", 
-                    (ficha, tipo, serie))
-            resultado = cur.fetchone()[0] > 0
-            cur.close()
-            return resultado
-        except Exception as e:
-            print(f"Error verificando existencia: {e}")
+            
+            # ✅ NORMALIZAR DATOS
+            ficha_clean = str(ficha).strip() if ficha else ""
+            tipo_clean = str(tipo).strip().lower() if tipo else ""
+            marca_clean = str(marca).strip().lower() if marca else ""
+            modelo_clean = str(modelo).strip().lower() if modelo else ""
+            serie_clean = str(serie).strip() if serie else ""
+            imei_clean = str(imei).strip() if imei else ""
+            
+            # ✅ VERIFICACIÓN POR PRIORIDAD
+            
+            # 1. PRIORIDAD MÁXIMA: Misma Ficha (identificador único del sistema)
+            if ficha_clean:
+                cur.execute("""
+                    SELECT id, ficha, tipo, marca, modelo, serie, imei 
+                    FROM bienes 
+                    WHERE ficha = ? AND ficha != '' AND ficha IS NOT NULL
+                """, (ficha_clean,))
+                existente = cur.fetchone()
+                if existente:
+                    print(f"🚨 DUPLICADO POR FICHA: {ficha_clean}")
+                    print(f"   Ya existe: {existente['tipo']} - {existente['marca']} {existente['modelo']}")
+                    return True
+            
+            # 2. PRIORIDAD ALTA: Mismo IMEI (no vacío en ambos) - IGNORAR VALORES GENÉRICOS
+            if imei_clean and imei_clean.upper() not in ['SIN IMEI', 'NO TIENE', 'N/A', '']:
+                cur.execute("""
+                    SELECT id, ficha, tipo, marca, modelo, serie, imei 
+                    FROM bienes 
+                    WHERE imei = ? AND imei != '' AND imei IS NOT NULL
+                """, (imei_clean,))
+                existente = cur.fetchone()
+                if existente:
+                    print(f"🚨 DUPLICADO POR IMEI: {imei_clean}")
+                    print(f"   Ya existe: Ficha {existente['ficha']} - {existente['marca']} {existente['modelo']}")
+                    return True
+            
+            # 3. PRIORIDAD MEDIA: Misma Serie (no vacía en ambos) - IGNORAR "SIN SERIE"
+            if serie_clean and serie_clean.upper() not in ['SIN SERIE', 'SIN_SERIE', 'NO TIENE', 'N/A', '']:
+                cur.execute("""
+                    SELECT id, ficha, tipo, marca, modelo, serie, imei 
+                    FROM bienes 
+                    WHERE serie = ? AND serie != '' AND serie IS NOT NULL
+                """, (serie_clean,))
+                existente = cur.fetchone()
+                if existente:
+                    print(f"⚠️ DUPLICADO POR SERIE: {serie_clean}")
+                    print(f"   Ya existe: Ficha {existente['ficha']} - {existente['marca']} {existente['modelo']}")
+                    return True
+            
+            # 4. PRIORIDAD BAJA: Mismo tipo+marca+modelo SOLO SI NO HAY SERIE/IMEI VÁLIDOS
+            # (Para evitar bloquear bienes similares pero con identificadores únicos diferentes)
+            if all([tipo_clean, marca_clean, modelo_clean]):
+                # Solo considerar duplicado si NO tienen serie/IMEI válidos
+                cur.execute("""
+                    SELECT id, ficha, tipo, marca, modelo, serie, imei 
+                    FROM bienes 
+                    WHERE LOWER(tipo) = ? AND LOWER(marca) = ? AND LOWER(modelo) = ?
+                    AND (serie = '' OR serie IS NULL OR UPPER(serie) IN ('SIN SERIE', 'SIN_SERIE', 'NO TIENE', 'N/A'))
+                    AND (imei = '' OR imei IS NULL OR UPPER(imei) IN ('SIN IMEI', 'NO TIENE', 'N/A'))
+                """, (tipo_clean, marca_clean, modelo_clean))
+                existente = cur.fetchone()
+                if existente:
+                    print(f"🔍 DUPLICADO POR TIPO+MARCA+MODELO (sin identificadores únicos):")
+                    print(f"   Tipo: {tipo_clean}, Marca: {marca_clean}, Modelo: {modelo_clean}")
+                    print(f"   Ya existe: Ficha {existente['ficha']}")
+                    return True
+            
             return False
+            
+        except Exception as e:
+            print(f"❌ Error verificando existencia: {e}")
+            return False
+    
     def obtener_bien_por_id(self, bien_id):
         """Obtiene un bien por su ID - PARA EL GENERADOR DE ACTAS"""
         try:
@@ -857,3 +922,14 @@ class DB:
         except Exception as e:
             print(f"❌ Error obteniendo bien por ficha: {e}")
             return None
+    
+    def actualizar_pdf_movimiento(self, movimiento_id, ruta_pdf):
+        """Actualiza la ruta del PDF de un movimiento existente"""
+        try:
+            query = "UPDATE movimientos SET archivo_path = ? WHERE id = ?"
+            self.conn.execute(query, (ruta_pdf, movimiento_id))
+            self.conn.commit()  # ← Esto es importante
+            return True
+        except Exception as e:
+            print(f"❌ Error actualizando PDF del movimiento: {e}")
+            return False

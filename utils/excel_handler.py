@@ -19,6 +19,28 @@ def leer_excel_importacion(ruta_archivo):
         if not columnas_requeridas.issubset(set(df.columns)):
             return None, f"Faltan columnas requeridas: {columnas_requeridas}"
         
+        # ✅ NUEVO: ANALIZAR DUPLICADOS - DEBUG ESPECÍFICO
+        print("=" * 50)
+        print("🚀 INICIANDO ANALIZADOR DE DUPLICADOS NUEVO")
+        print("=" * 50)
+        
+        from utils.validadores_inventario import analizador_excel_agresivo, generar_reporte_bloqueo
+        
+        conflictos, df_limpio = analizador_excel_agresivo(ruta_archivo)
+        
+        print(f"📊 RESULTADO DEL ANALIZADOR:")
+        print(f"   - Fichas duplicadas: {len(conflictos['fichas_duplicadas'])}")
+        print(f"   - Series duplicadas: {len(conflictos['series_duplicadas'])}") 
+        print(f"   - IMEIs duplicados: {len(conflictos['imeis_duplicados'])}")
+        print(f"   - BLOQUEADO: {conflictos['bloqueado']}")
+        
+        if conflictos['bloqueado']:
+            reporte = generar_reporte_bloqueo(conflictos)
+            print("🛑 IMPORTACIÓN BLOQUEADA POR ANALIZADOR NUEVO")
+            return None, reporte
+        
+        print("✅ ANALIZADOR NUEVO: NO HAY DUPLICADOS, CONTINUANDO...")
+        print("=" * 50)
         return df, None
         
     except Exception as e:

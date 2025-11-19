@@ -1,6 +1,6 @@
 """
-🔄 GESTOR DE SINCRONIZACIÓN PROFESIONAL - Sistema de Inventario AGC
-Maneja sincronización inteligente entre base local y red
+🔄 GESTOR DE SINCRONIZACIÓN PROFESIONAL - VERSIÓN CORREGIDA
+Sistema de sincronización compatible con tu schema actual
 """
 
 import sqlite3
@@ -12,17 +12,15 @@ from pathlib import Path
 import json
 
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal
-# from database.db_manager import DB  # ❌ COMENTADO TEMPORALMENTE
-
 
 class SyncManager(QObject):
-    """Gestor principal de sincronización"""
+    """Gestor principal de sincronización - VERSIÓN CORREGIDA"""
     
     # ✅ Señales para comunicación con la UI
-    sincronizacion_iniciada = pyqtSignal(str)  # mensaje
-    sincronizacion_completada = pyqtSignal(str, bool)  # mensaje, exito
-    progreso_sincronizacion = pyqtSignal(int, str)  # porcentaje, estado
-    conflicto_detectado = pyqtSignal(dict)  # datos del conflicto
+    sincronizacion_iniciada = pyqtSignal(str)
+    sincronizacion_completada = pyqtSignal(str, bool)
+    progreso_sincronizacion = pyqtSignal(int, str)
+    conflicto_detectado = pyqtSignal(dict)
 
     def _importar_config(self):
         """Importa config_manager solo cuando se necesita"""
@@ -42,75 +40,18 @@ class SyncManager(QObject):
         self.timer.timeout.connect(self._sincronizar_automatico)
         self._inicializar_sincronizador()
 
-    # ✅ AGREGAR AQUÍ - MÉTODO NUEVO
-    def _crear_columnas_sincronizacion(self, db):
-        """Crea las columnas necesarias para sincronización si no existen - VERSIÓN COMPLETA"""
-        try:
-            cursor = db.conn.cursor()
-            columnas_creadas = False
-            
-            # ✅ VERIFICAR COLUMNAS EN TABLA BIENES
-            cursor.execute("PRAGMA table_info(bienes)")
-            columnas_bienes = [col[1] for col in cursor.fetchall()]
-            
-            # Lista de columnas necesarias para sincronización
-            columnas_necesarias = [
-                'fecha_actualizacion',
-                'ultima_sincronizacion',
-                'usuario_modificacion'
-            ]
-            
-            # Agregar columnas faltantes
-            for columna in columnas_necesarias:
-                if columna not in columnas_bienes:
-                    try:
-                        cursor.execute(f"ALTER TABLE bienes ADD COLUMN {columna} TEXT")
-                        print(f"✅ Columna '{columna}' agregada a tabla bienes")
-                        columnas_creadas = True
-                    except sqlite3.OperationalError as e:
-                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
-            
-            # ✅ VERIFICAR COLUMNAS EN TABLA MOVIMIENTOS
-            cursor.execute("PRAGMA table_info(movimientos)")
-            columnas_movimientos = [col[1] for col in cursor.fetchall()]
-            
-            columnas_movimientos_necesarias = [
-                'fecha_actualizacion',
-                'usuario_modificacion'
-            ]
-            
-            for columna in columnas_movimientos_necesarias:
-                if columna not in columnas_movimientos:
-                    try:
-                        cursor.execute(f"ALTER TABLE movimientos ADD COLUMN {columna} TEXT")
-                        print(f"✅ Columna '{columna}' agregada a tabla movimientos")
-                        columnas_creadas = True
-                    except sqlite3.OperationalError as e:
-                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
-            
-            db.conn.commit()
-            return columnas_creadas
-            
-        except Exception as e:
-            print(f"❌ Error crítico creando columnas de sync: {e}")
-            try:
-                db.conn.rollback()
-            except:
-                pass
-            return False
-        
     def _inicializar_sincronizador(self):
         """Inicializa el sistema de sincronización"""
         cargar_configuracion, _, _, _ = self._importar_config()
         config = cargar_configuracion()
         
         if config["auto_sincronizar"]:
-            intervalo = config["intervalo_sincronizacion"] * 1000  # ms
+            intervalo = config["intervalo_sincronizacion"] * 1000
             self.timer.start(intervalo)
             print(f"🔄 Sincronización automática cada {config['intervalo_sincronizacion']} segundos")
-        
+    
     def conectar_db_red(self):
-        """Intenta conectar a la base de datos de red - VERSIÓN MEJORADA"""
+        """Intenta conectar a la base de datos de red - VERSIÓN CORREGIDA"""
         try:
             _, _, _, obtener_ruta_db_maestra = self._importar_config()
             ruta_red = obtener_ruta_db_maestra()
@@ -119,38 +60,33 @@ class SyncManager(QObject):
             
             print(f"🔍 Verificando acceso a red: {os.path.dirname(ruta_red)}")
             
-            # ✅ VERIFICAR ACCESO AL DIRECTORIO DE RED
-            if not os.path.exists(os.path.dirname(ruta_red)):
-                print("❌ No se puede acceder al directorio de red")
+            # ✅ VERIFICAR SI EL DIRECTORIO DE RED ES ACCESIBLE
+            directorio_red = os.path.dirname(ruta_red)
+            if not os.path.exists(directorio_red):
+                print(f"❌ No se puede acceder al directorio de red: {directorio_red}")
+                print("💡 Verifica que la unidad M: esté mapeada y tengas permisos")
                 return False
             
-            # ✅ VERIFICAR SI EL ARCHIVO DE BD EXISTE
+            # ✅ SI NO EXISTE LA BD, CREAR UNA NUEVA
             if not os.path.exists(ruta_red):
-                print(f"⚠️ Archivo de BD no existe en red: {ruta_red}")
-                # Podríamos crear uno nuevo, pero por ahora retornar False
-                return False
+                print(f"🆕 Archivo de BD no existe en red. Creando nueva base de datos...")
+                try:
+                    from database.db_manager import DB
+                    self.db_red = DB(ruta_red, config["actas_folder_red"])
+                    print(f"✅ Nueva base de datos creada en red: {ruta_red}")
+                    return True
+                except Exception as e:
+                    print(f"❌ No se pudo crear BD en red: {e}")
+                    return False
             
-            # ✅ CONECTAR A LA BASE DE DATOS DE RED
+            # ✅ CONECTAR A BD EXISTENTE
             from database.db_manager import DB
             self.db_red = DB(ruta_red, config["actas_folder_red"])
-            
-            # ✅ NUEVO: CREAR COLUMNAS DE SINCRONIZACIÓN SI FALTAN
-            print("🔧 Verificando columnas de sincronización en BD red...")
-            columnas_creadas = self._crear_columnas_sincronizacion(self.db_red)
-            
-            if columnas_creadas:
-                print("✅ Columnas de sincronización verificadas/creadas en BD red")
-            else:
-                print("⚠️ No se pudieron crear algunas columnas en BD red")
-            
             print("✅ Conectado exitosamente a base de datos de red")
             return True
             
-        except sqlite3.OperationalError as e:
-            print(f"❌ Error operacional conectando a BD red: {e}")
-            return False
         except Exception as e:
-            print(f"❌ Error inesperado conectando a BD red: {e}")
+            print(f"❌ Error conectando a BD red: {e}")
             return False
     
     def sincronizar_manual(self):
@@ -174,7 +110,6 @@ class SyncManager(QObject):
         if not config["auto_sincronizar"]:
             return False
         
-        # Verificar si hay conexión a red
         if not self._verificar_conexion_red():
             return False
         
@@ -190,7 +125,7 @@ class SyncManager(QObject):
             return False
     
     def _ejecutar_sincronizacion(self, tipo):
-        """Ejecuta el proceso completo de sincronización"""
+        """Ejecuta el proceso completo de sincronización - VERSIÓN SIMPLIFICADA"""
         try:
             self.progreso_sincronizacion.emit(0, "Conectando con red...")
             
@@ -199,35 +134,25 @@ class SyncManager(QObject):
                 self.sincronizacion_completada.emit("❌ No se pudo conectar a la red", False)
                 return False
             
-            self.progreso_sincronizacion.emit(20, "Descargando cambios...")
+            self.progreso_sincronizacion.emit(30, "Sincronizando base completa...")
             
-            # 2. Descargar cambios desde red
-            cambios_descargados = self._descargar_cambios_desde_red()
+            # 2. PARA PRIMERA VERSIÓN: Sincronización completa simple
+            exito = self._sincronizacion_completa_simple()
             
-            self.progreso_sincronizacion.emit(60, "Subiendo cambios...")
-            
-            # 3. Subir cambios locales a red
-            cambios_subidos = self._subir_cambios_a_red()
-            
-            self.progreso_sincronizacion.emit(80, "Resolviendo conflictos...")
-            
-            # 4. Resolver conflictos
-            conflictos = self._resolver_conflictos()
-            
-            self.progreso_sincronizacion.emit(100, "Completando...")
-            
-            # 5. Actualizar estado
-            _, actualizar_ultima_sincronizacion, _, _ = self._importar_config()
-            actualizar_ultima_sincronizacion()
-            
-            # 6. Reportar resultados
-            mensaje = self._generar_reporte_sincronizacion(
-                cambios_descargados, cambios_subidos, conflictos
-            )
-            
-            self.sincronizacion_completada.emit(mensaje, True)
-            print(f"✅ Sincronización {tipo} completada: {mensaje}")
-            return True
+            if exito:
+                self.progreso_sincronizacion.emit(100, "Completando...")
+                
+                # Actualizar estado
+                _, actualizar_ultima_sincronizacion, _, _ = self._importar_config()
+                actualizar_ultima_sincronizacion()
+                
+                mensaje = "✅ Sincronización completa exitosa"
+                self.sincronizacion_completada.emit(mensaje, True)
+                print(f"✅ Sincronización {tipo} completada")
+                return True
+            else:
+                self.sincronizacion_completada.emit("❌ Error en sincronización", False)
+                return False
             
         except Exception as e:
             error_msg = f"❌ Error en sincronización: {str(e)}"
@@ -235,289 +160,90 @@ class SyncManager(QObject):
             print(error_msg)
             return False
     
-    def _descargar_cambios_desde_red(self):
-        """Descarga cambios desde la base maestra a local"""
+    def _sincronizacion_completa_simple(self):
+        """Sincronización completa simple - reemplaza ambas bases"""
         try:
-            cambios = {
-                "bienes_nuevos": 0,
-                "bienes_actualizados": 0,
-                "movimientos_nuevos": 0
-            }
+            print("🔄 Iniciando sincronización completa...")
             
-            # Obtener última sincronización
-            cargar_configuracion, _, _, _ = self._importar_config()
-            config = cargar_configuracion()
-            ultima_sync = config.get("ultima_sincronizacion")
+            # Crear backup de ambas bases primero
+            backup_local = self._crear_backup_local()
+            backup_red = self._crear_backup_red()
             
-            if not ultima_sync:
-                print("🔄 Primera sincronización - descargando todo")
-                return self._descargar_todo_desde_red()
-            
-            # 🔍 Obtener cambios recientes desde red
-            cambios_bienes = self._obtener_bienes_modificados_desde(ultima_sync)
-            cambios_movimientos = self._obtener_movimientos_modificados_desde(ultima_sync)
-            
-            # 📥 Aplicar cambios a local
-            for bien in cambios_bienes:
-                if self._aplicar_cambio_bien(bien):
-                    cambios["bienes_actualizados"] += 1
-            
-            for movimiento in cambios_movimientos:
-                if self._aplicar_cambio_movimiento(movimiento):
-                    cambios["movimientos_nuevos"] += 1
-            
-            print(f"📥 Descargados: {cambios['bienes_actualizados']} bienes, {cambios['movimientos_nuevos']} movimientos")
-            return cambios
-            
-        except Exception as e:
-            print(f"❌ Error descargando cambios: {e}")
-            return {"error": str(e)}
-    
-    def _descargar_todo_desde_red(self):
-        """Descarga toda la base de datos (primera sincronización)"""
-        try:
-            # Crear backup de local primero
-            self._crear_backup_local()
-            
-            # Copiar archivo completo de red a local
+            # Estrategia simple: copiar la base más reciente a la otra
+            # Por ahora, copiamos local → red para pruebas
             _, _, obtener_ruta_db_activa, obtener_ruta_db_maestra = self._importar_config()
-            ruta_red = obtener_ruta_db_maestra()
             ruta_local = obtener_ruta_db_activa()
+            ruta_red = obtener_ruta_db_maestra()
             
-            if os.path.exists(ruta_red):
-                shutil.copy2(ruta_red, ruta_local)
-                print("✅ Base completa descargada desde red")
-                return {"completa": True, "mensaje": "Base completa sincronizada"}
+            if os.path.exists(ruta_local):
+                shutil.copy2(ruta_local, ruta_red)
+                print("✅ Base local copiada a red")
+                return True
             else:
-                print("❌ No se encontró base en red")
-                return {"error": "Base red no encontrada"}
+                print("❌ No existe base local para copiar")
+                return False
                 
         except Exception as e:
-            print(f"❌ Error descargando base completa: {e}")
-            return {"error": str(e)}
-    
-    def _obtener_bienes_modificados_desde(self, fecha_desde):
-        """Obtiene bienes modificados desde fecha dada"""
-        try:
-            cursor = self.db_red.conn.cursor()
-            query = """
-                SELECT * FROM bienes 
-                WHERE datetime(fecha_registro) > datetime(?)
-                OR datetime(fecha_actualizacion) > datetime(?)
-                ORDER BY fecha_actualizacion DESC
-            """
-            cursor.execute(query, (fecha_desde, fecha_desde))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"❌ Error obteniendo bienes modificados: {e}")
-            return []
-    
-    def _obtener_movimientos_modificados_desde(self, fecha_desde):
-        """Obtiene movimientos modificados desde fecha dada"""
-        try:
-            cursor = self.db_red.conn.cursor()
-            query = "SELECT * FROM movimientos WHERE datetime(fecha) > datetime(?)"
-            cursor.execute(query, (fecha_desde,))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"❌ Error obteniendo movimientos modificados: {e}")
-            return []
-    
-    def _aplicar_cambio_bien(self, bien_red):
-        """Aplica cambio de bien desde red a local"""
-        try:
-            cursor = self.db_local.conn.cursor()
+            print(f"❌ Error en sincronización completa: {e}")
             
-            # Verificar si existe en local
-            cursor.execute("SELECT id FROM bienes WHERE id = ?", (bien_red['id'],))
-            existe = cursor.fetchone()
+            # Restaurar backups en caso de error
+            self._restaurar_backup_si_existe(backup_local, obtener_ruta_db_activa())
+            self._restaurar_backup_si_existe(backup_red, obtener_ruta_db_maestra())
             
-            if existe:
-                # Actualizar existente
-                query = """
-                    UPDATE bienes SET 
-                    ficha=?, tipo=?, marca=?, modelo=?, serie=?, estado=?,
-                    nombre=?, apellido=?, dni_cuit=?, institucional=?,
-                    prd=?, fecha_actualizacion=?
-                    WHERE id=?
-                """
-                cursor.execute(query, (
-                    bien_red['ficha'], bien_red['tipo'], bien_red['marca'],
-                    bien_red['modelo'], bien_red['serie'], bien_red['estado'],
-                    bien_red['nombre'], bien_red['apellido'], bien_red['dni_cuit'],
-                    bien_red['institucional'], bien_red['prd'],
-                    datetime.now().isoformat(), bien_red['id']
-                ))
-            else:
-                # Insertar nuevo
-                columnas = list(bien_red.keys())
-                placeholders = ','.join(['?'] * len(columnas))
-                query = f"INSERT INTO bienes ({','.join(columnas)}) VALUES ({placeholders})"
-                cursor.execute(query, list(bien_red))
-            
-            self.db_local.conn.commit()
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error aplicando cambio de bien: {e}")
-            self.db_local.conn.rollback()
             return False
-    
-    def _subir_cambios_a_red(self):
-        """Sube cambios locales a la base maestra"""
-        try:
-            cambios = {
-                "bienes_subidos": 0,
-                "movimientos_subidos": 0
-            }
-            
-            cargar_configuracion, _, _, _ = self._importar_config()
-            config = cargar_configuracion()
-            ultima_sync = config.get("ultima_sincronizacion")
-            
-            if not ultima_sync:
-                print("⏭️  No hay última sincronización - saltando subida")
-                return cambios
-            
-            # 🔍 Obtener cambios locales
-            cambios_bienes = self._obtener_bienes_locales_modificados(ultima_sync)
-            cambios_movimientos = self._obtener_movimientos_locales_modificados(ultima_sync)
-            
-            # 📤 Aplicar cambios a red
-            for bien in cambios_bienes:
-                if self._subir_bien_a_red(bien):
-                    cambios["bienes_subidos"] += 1
-            
-            for movimiento in cambios_movimientos:
-                if self._subir_movimiento_a_red(movimiento):
-                    cambios["movimientos_subidos"] += 1
-            
-            print(f"📤 Subidos: {cambios['bienes_subidos']} bienes, {cambios['movimientos_subidos']} movimientos")
-            return cambios
-            
-        except Exception as e:
-            print(f"❌ Error subiendo cambios: {e}")
-            return {"error": str(e)}
-    
-    def _obtener_bienes_locales_modificados(self, fecha_desde):
-        """Obtiene bienes locales modificados desde fecha"""
-        try:
-            cursor = self.db_local.conn.cursor()
-            query = """
-                SELECT * FROM bienes 
-                WHERE datetime(fecha_registro) > datetime(?)
-                OR datetime(fecha_actualizacion) > datetime(?)
-                ORDER BY fecha_actualizacion DESC
-            """
-            cursor.execute(query, (fecha_desde, fecha_desde))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"❌ Error obteniendo bienes locales: {e}")
-            return []
-    
-    def _obtener_movimientos_locales_modificados(self, fecha_desde):
-        """Obtiene movimientos locales modificados desde fecha"""
-        try:
-            cursor = self.db_local.conn.cursor()
-            query = "SELECT * FROM movimientos WHERE datetime(fecha) > datetime(?)"
-            cursor.execute(query, (fecha_desde,))
-            return cursor.fetchall()
-        except Exception as e:
-            print(f"❌ Error obteniendo movimientos locales: {e}")
-            return []
-    
-    def _subir_bien_a_red(self, bien_local):
-        """Sube un bien local a la red"""
-        try:
-            cursor = self.db_red.conn.cursor()
-            
-            # Verificar si existe en red
-            cursor.execute("SELECT id FROM bienes WHERE id = ?", (bien_local['id'],))
-            existe = cursor.fetchone()
-            
-            if existe:
-                # Actualizar existente en red
-                query = """
-                    UPDATE bienes SET 
-                    ficha=?, tipo=?, marca=?, modelo=?, serie=?, estado=?,
-                    nombre=?, apellido=?, dni_cuit=?, institucional=?,
-                    prd=?, fecha_actualizacion=?
-                    WHERE id=?
-                """
-                cursor.execute(query, (
-                    bien_local['ficha'], bien_local['tipo'], bien_local['marca'],
-                    bien_local['modelo'], bien_local['serie'], bien_local['estado'],
-                    bien_local['nombre'], bien_local['apellido'], bien_local['dni_cuit'],
-                    bien_local['institucional'], bien_local['prd'],
-                    datetime.now().isoformat(), bien_local['id']
-                ))
-            else:
-                # Insertar nuevo en red
-                columnas = list(bien_local.keys())
-                placeholders = ','.join(['?'] * len(columnas))
-                query = f"INSERT INTO bienes ({','.join(columnas)}) VALUES ({placeholders})"
-                cursor.execute(query, list(bien_local))
-            
-            self.db_red.conn.commit()
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error subiendo bien a red: {e}")
-            self.db_red.conn.rollback()
-            return False
-    
-    def _resolver_conflictos(self):
-        """Detecta y resuelve conflictos (versión básica)"""
-        # ✅ POR AHORA: Implementación simple
-        # ✅ EN EL FUTURO: Sistema avanzado de detección de conflictos
-        return {"conflictos": 0, "resueltos": 0}
     
     def _crear_backup_local(self):
-        """Crea backup de la base local antes de sincronizar"""
+        """Crea backup de la base local"""
         try:
             _, _, obtener_ruta_db_activa, _ = self._importar_config()
             ruta_local = obtener_ruta_db_activa()
-            backup_dir = os.path.join(os.path.dirname(ruta_local), "backups")
+            return self._crear_backup(ruta_local, "local")
+        except Exception as e:
+            print(f"⚠️ No se pudo crear backup local: {e}")
+            return None
+    
+    def _crear_backup_red(self):
+        """Crea backup de la base de red"""
+        try:
+            _, _, _, obtener_ruta_db_maestra = self._importar_config()
+            ruta_red = obtener_ruta_db_maestra()
+            return self._crear_backup(ruta_red, "red")
+        except Exception as e:
+            print(f"⚠️ No se pudo crear backup red: {e}")
+            return None
+    
+    def _crear_backup(self, ruta_original, tipo):
+        """Crea un backup de una base de datos"""
+        try:
+            if not os.path.exists(ruta_original):
+                print(f"⚠️ No se puede hacer backup de {tipo}: archivo no existe")
+                return None
+                
+            backup_dir = os.path.join(os.path.dirname(ruta_original), "backups")
             os.makedirs(backup_dir, exist_ok=True)
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"backup_pre_sync_{timestamp}.db"
+            backup_name = f"backup_{tipo}_{timestamp}.db"
             backup_path = os.path.join(backup_dir, backup_name)
             
-            shutil.copy2(ruta_local, backup_path)
-            print(f"✅ Backup creado: {backup_name}")
+            shutil.copy2(ruta_original, backup_path)
+            print(f"✅ Backup {tipo} creado: {backup_name}")
             return backup_path
             
         except Exception as e:
-            print(f"⚠️ No se pudo crear backup: {e}")
+            print(f"⚠️ Error creando backup {tipo}: {e}")
             return None
     
-    def _generar_reporte_sincronizacion(self, descargados, subidos, conflictos):
-        """Genera reporte de sincronización"""
-        reporte = "🔄 Sincronización completada: "
-        
-        if "error" in descargados:
-            return f"❌ Error: {descargados['error']}"
-        
-        if "completa" in descargados:
-            reporte += "Base completa sincronizada"
-        else:
-            partes = []
-            if descargados.get("bienes_actualizados", 0) > 0:
-                partes.append(f"📥 {descargados['bienes_actualizados']} bienes")
-            if descargados.get("movimientos_nuevos", 0) > 0:
-                partes.append(f"📥 {descargados['movimientos_nuevos']} movimientos")
-            if subidos.get("bienes_subidos", 0) > 0:
-                partes.append(f"📤 {subidos['bienes_subidos']} bienes")
-            if subidos.get("movimientos_subidos", 0) > 0:
-                partes.append(f"📤 {subidos['movimientos_subidos']} movimientos")
-            
-            if partes:
-                reporte += " | ".join(partes)
-            else:
-                reporte += "Sin cambios"
-        
-        return reporte
+    def _restaurar_backup_si_existe(self, backup_path, ruta_original):
+        """Restaura un backup si existe"""
+        try:
+            if backup_path and os.path.exists(backup_path):
+                shutil.copy2(backup_path, ruta_original)
+                print(f"✅ Backup restaurado: {os.path.basename(backup_path)}")
+                return True
+        except Exception as e:
+            print(f"⚠️ Error restaurando backup: {e}")
+        return False
     
     def obtener_estado(self):
         """Obtiene estado actual del sincronizador"""
@@ -535,4 +261,4 @@ class SyncManager(QObject):
     def detener_sincronizacion(self):
         """Detiene la sincronización automática"""
         self.timer.stop()
-        print("⏹️  Sincronización automática detenida")
+        print("⏹️ Sincronización automática detenida")

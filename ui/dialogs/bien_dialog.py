@@ -455,10 +455,19 @@ class BienDialog(QDialog):
             "anio_prd": self.anio_prd.text().strip()
         }
         
-        # Verificar si ya existe
-        if self.db.bien_existe(bien_data["ficha"], bien_data["tipo"], bien_data["serie"]):
+            # Verificar si ya existe - VERSIÓN MEJORADA CON IMEI
+# Verificar si ya existe - VERSIÓN MEJORADA CON IMEI
+        if self.db.bien_existe(bien_data["ficha"], bien_data["tipo"], 
+                            bien_data["marca"], bien_data["modelo"], 
+                            bien_data["serie"], bien_data["imei"]):
             QMessageBox.warning(self, "Duplicado", 
-                            "Ya existe un bien con esa ficha, tipo y serie")
+                            f"Ya existe un bien con:\n"
+                            f"• Ficha: {bien_data['ficha']}\n"
+                            f"• Tipo: {bien_data['tipo']}\n" 
+                            f"• Marca: {bien_data['marca']}\n"
+                            f"• Modelo: {bien_data['modelo']}\n"
+                            f"• Serie: {bien_data['serie']}\n"
+                            f"• IMEI: {bien_data['imei']}")
             return
         
         # Guardar en base de datos
@@ -529,6 +538,20 @@ class BienDialog(QDialog):
                 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo crear la plantilla:\n{e}")
+            
+    def _campo_valido(self, valor):
+        """Verifica si un campo tiene contenido real después de limpiar"""
+        if valor is None:
+            return False
+        try:
+            # Manejar pandas NaN y otros valores especiales
+            if hasattr(valor, 'dtype') and pd.isna(valor):
+                return False
+        except:
+            pass
+        
+        valor_str = str(valor).strip()
+        return bool(valor_str) and valor_str.lower() not in ['', 'nan', 'none', 'null', 'nat']
 
     def importar_bienes(self):
         """Importa bienes desde archivo Excel"""
@@ -566,15 +589,40 @@ class BienDialog(QDialog):
                     # Validación de duplicados
                     ficha = str(fila.get("ficha", "")).strip()
                     tipo = str(fila.get("tipo", "")).strip() 
+                    marca = str(fila.get("marca", "")).strip()
+                    modelo = str(fila.get("modelo", "")).strip()
                     serie = str(fila.get("serie", "")).strip()
+                    imei = str(fila.get("imei", "")).strip()
         
-                    # Validar campos requeridos
-                    if not ficha or not tipo:
-                        raise ValueError("Falta ficha o tipo")
+                    # DEBUG TEMPORAL - ver los datos reales
+                    print(f"DEBUG Fila {i+2}: Ficha='{ficha}' Tipo='{tipo}' Marca='{marca}' Modelo='{modelo}'")
+
+                    # Validar campos requeridos - VERSIÓN FLEXIBLE CORREGIDA
+                    # Ficha y Tipo son obligatorios, Marca y Modelo pueden estar vacíos
+                    campos_faltantes = []
+                    if not self._campo_valido(ficha): campos_faltantes.append("ficha")
+                    if not self._campo_valido(tipo): campos_faltantes.append("tipo")
+
+                    if campos_faltantes:
+                        raise ValueError(f"Campos requeridos vacíos: {', '.join(campos_faltantes)}")
+
+                    # Marca y modelo son opcionales - si están vacíos, usar valores por defecto
+                    if not self._campo_valido(marca):
+                        marca = "SIN MARCA"
+                    if not self._campo_valido(modelo):
+                        modelo = "SIN MODELO"
+
+                    # Marca y modelo son opcionales - si están vacíos, usar valores por defecto
+                    if not self._campo_valido(marca):
+                        marca = "SIN MARCA"
+                    if not self._campo_valido(modelo):
+                        modelo = "SIN MODELO"
+                        
+                        raise ValueError(f"Campos requeridos vacíos: {', '.join(campos_faltantes)}")
                     
-                    # Verificar si ya existe
-                    if self.db.bien_existe(ficha, tipo, serie):
-                        raise ValueError(f"Ya existe {tipo} - Ficha {ficha} - Serie {serie}")
+                    # ✅ VERIFICACIÓN MEJORADA - incluye marca, modelo e IMEI
+                    if self.db.bien_existe(ficha, tipo, marca, modelo, serie, imei):
+                        raise ValueError(f"Ya existe:\n• Ficha: {ficha}\n• Tipo: {tipo}\n• Marca: {marca}\n• Modelo: {modelo}\n• Serie: '{serie}'\n• IMEI: '{imei}'")
                     
                     # Preparar datos
                     bien_data = {
@@ -598,7 +646,7 @@ class BienDialog(QDialog):
                         "prd": str(fila.get("prd", "")),
                         "anio_prd": str(fila.get("anio_prd", ""))
                     }
-                               
+                            
                     # Guardar
                     if self.db.add_bien(bien_data):
                         importados += 1
