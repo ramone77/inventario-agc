@@ -11,7 +11,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
                            QLabel, QLineEdit, QComboBox, QTextEdit, QPushButton,
                            QTabWidget, QWidget, QGroupBox, QMessageBox,
                            QFileDialog, QProgressBar, QRadioButton, QStatusBar,
-                           QScrollArea, QCheckBox, QListWidget, QListWidgetItem)
+                           QScrollArea, QCheckBox, QListWidget, QListWidgetItem,
+                           QApplication)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QRegExpValidator, QDoubleValidator, QIntValidator
 from PyQt5.QtCore import QRegExp
@@ -554,7 +555,7 @@ class BienDialog(QDialog):
         return bool(valor_str) and valor_str.lower() not in ['', 'nan', 'none', 'null', 'nat']
 
     def importar_bienes(self):
-        """Importa bienes desde archivo Excel"""
+        """Importa bienes usando el sistema unificado de excel_handler"""
         ruta, _ = QFileDialog.getOpenFileName(
             self, "Seleccionar archivo Excel", "", "Excel (*.xlsx *.xls)"
         )
@@ -565,118 +566,153 @@ class BienDialog(QDialog):
         try:
             self.progress_bar.setVisible(True)
             self.log_area.clear()
-            
-            # Leer Excel
-            df = pd.read_excel(ruta).fillna("")
-            df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
-            
-            # Validar estructura
-            columnas_requeridas = {"ficha", "tipo", "marca", "modelo", "serie"}
-            if not columnas_requeridas.issubset(set(df.columns)):
-                QMessageBox.warning(self, "Formato incorrecto", 
-                                f"Faltan columnas requeridas: {columnas_requeridas}")
+
+            from utils.excel_handler import analizar_excel_con_errores
+            df_validos, df_errores, resumen = analizar_excel_con_errores(ruta)
+
+            # Mostrar resumen en log_area
+            resumen_texto = (
+                f"Total registros: {resumen['total_registros']}\n"
+                f"Importados: {resumen['total_validos']}\n"
+                f"Rechazados: {resumen['total_errores']}\n"
+            )
+            self.log_area.append(resumen_texto)
+
+            if resumen['total_errores'] > 0:
+                self.log_area.append("\nSe encontraron registros con errores. Puedes descargar el reporte para corregirlos.")
+                # Botón para descargar Excel de errores
+                btn_descargar = QPushButton("Descargar Excel de errores")
+                def descargar_errores():
+                    ruta_save, _ = QFileDialog.getSaveFileName(self, "Guardar reporte de errores", "errores_importacion.xlsx", "Excel (*.xlsx)")
+                    if ruta_save:
+                        df_errores.to_excel(ruta_save, index=False)
+                        QMessageBox.information(self, "Reporte guardado", f"Reporte de errores guardado en:\n{ruta_save}")
+                btn_descargar.clicked.connect(descargar_errores)
+                self.log_area.append("")
+                self.log_area.parent().layout().addWidget(btn_descargar)
+
+            if resumen['total_validos'] == 0:
+                QMessageBox.warning(self, "Sin registros válidos", "No hay registros válidos para importar.")
                 return
-            
-            # Procesar filas
-            importados = 0
-            errores = []
-            
-            self.progress_bar.setRange(0, len(df))
-            self.progress_bar.setValue(0)
 
-            for i, fila in df.iterrows():
-                try:
-                    # Validación de duplicados
-                    ficha = str(fila.get("ficha", "")).strip()
-                    tipo = str(fila.get("tipo", "")).strip() 
-                    marca = str(fila.get("marca", "")).strip()
-                    modelo = str(fila.get("modelo", "")).strip()
-                    serie = str(fila.get("serie", "")).strip()
-                    imei = str(fila.get("imei", "")).strip()
-        
-                    # DEBUG TEMPORAL - ver los datos reales
-                    print(f"DEBUG Fila {i+2}: Ficha='{ficha}' Tipo='{tipo}' Marca='{marca}' Modelo='{modelo}'")
+            # Preparar analisis para el resto del flujo
+            analisis = {
+                'nuevos': [],
+                'existentes': [],
+                'total_filas_excel': resumen['total_registros'],
+                'total_registros': resumen['total_validos'],
+                'conflictos_merge': [],
+                'ruta_original': ruta
+            }
+            # Solo los válidos se procesan
+            df = df_validos
 
-                    # Validar campos requeridos - VERSIÓN FLEXIBLE CORREGIDA
-                    # Ficha y Tipo son obligatorios, Marca y Modelo pueden estar vacíos
-                    campos_faltantes = []
-                    if not self._campo_valido(ficha): campos_faltantes.append("ficha")
-                    if not self._campo_valido(tipo): campos_faltantes.append("tipo")
+            # MOSTRAR DIÁLOGO ESTRATÉGICO
+            # Guardar el DataFrame válido para la importación masiva
+            self._df_importacion_valido = df
+            estrategia = self._mostrar_dialogo_estrategico_y_estrategia(analisis)
+            if estrategia:
+                self._ejecutar_importacion_masiva(analisis, estrategia)
 
-                    if campos_faltantes:
-                        raise ValueError(f"Campos requeridos vacíos: {', '.join(campos_faltantes)}")
-
-                    # Marca y modelo son opcionales - si están vacíos, usar valores por defecto
-                    if not self._campo_valido(marca):
-                        marca = "SIN MARCA"
-                    if not self._campo_valido(modelo):
-                        modelo = "SIN MODELO"
-
-                    # Marca y modelo son opcionales - si están vacíos, usar valores por defecto
-                    if not self._campo_valido(marca):
-                        marca = "SIN MARCA"
-                    if not self._campo_valido(modelo):
-                        modelo = "SIN MODELO"
-                        
-                        raise ValueError(f"Campos requeridos vacíos: {', '.join(campos_faltantes)}")
-                    
-                    # ✅ VERIFICACIÓN MEJORADA - incluye marca, modelo e IMEI
-                    if self.db.bien_existe(ficha, tipo, marca, modelo, serie, imei):
-                        raise ValueError(f"Ya existe:\n• Ficha: {ficha}\n• Tipo: {tipo}\n• Marca: {marca}\n• Modelo: {modelo}\n• Serie: '{serie}'\n• IMEI: '{imei}'")
-                    
-                    # Preparar datos
-                    bien_data = {
-                        "ficha": str(fila.get("ficha", "")),
-                        "tipo": str(fila.get("tipo", "")),
-                        "marca": str(fila.get("marca", "")),
-                        "modelo": str(fila.get("modelo", "")),
-                        "serie": str(fila.get("serie", "")),
-                        "linea": str(fila.get("linea", "")),
-                        "sim": str(fila.get("sim", "")),
-                        "empresa": str(fila.get("empresa", "")),
-                        "imei": str(fila.get("imei", "")),
-                        "nombre": str(fila.get("nombre", "")),
-                        "apellido": str(fila.get("apellido", "")),
-                        "dni_cuit": str(fila.get("dni_cuit", "")),
-                        "institucional": str(fila.get("institucional", "")),
-                        "descripcion": str(fila.get("descripcion", "")),
-                        "estado": str(fila.get("estado", "En depósito")),
-                        "fecha_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "monto_original": str(fila.get("monto_original", "")),
-                        "prd": str(fila.get("prd", "")),
-                        "anio_prd": str(fila.get("anio_prd", ""))
-                    }
-                            
-                    # Guardar
-                    if self.db.add_bien(bien_data):
-                        importados += 1
-                    else:
-                        raise ValueError("Error al guardar")
-                    
-                    self.progress_bar.setValue(i + 1)
-                        
-                except Exception as e:
-                    errores.append(f"Fila {i+2}: {str(e)}")
-                
-            self.progress_bar.setVisible(False)                
-            
-            # Mostrar resultados
-            self.log_area.append(f"✅ IMPORTACIÓN COMPLETADA\n")
-            self.log_area.append(f"📊 Registros importados: {importados}")
-            self.log_area.append(f"❌ Errores: {len(errores)}")
-            
-            if errores:
-                self.log_area.append("\n🔍 DETALLE DE ERRORES:")
-                for error in errores[:10]:
-                    self.log_area.append(f"   • {error}")
-                if len(errores) > 10:
-                    self.log_area.append(f"   ... y {len(errores) - 10} errores más")
-            
-            QMessageBox.information(self, "Importación finalizada", 
-                                f"Se importaron {importados} registros de {len(df)}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo importar el archivo:\n{e}")
+        finally:
+            self.progress_bar.setVisible(False)
+            self.actualizar_estadisticas()
+            
+    def _mostrar_dialogo_estrategico_y_estrategia(self, analisis):
+        """Diálogo de UNA decisión para importación masiva, retorna la estrategia seleccionada."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🎯 Estrategia de Importación")
+        dialog.setFixedSize(500, 400)
+        layout = QVBoxLayout(dialog)
+        # Título
+        titulo = QLabel("🚀 IMPORTACIÓN MASIVA - RESUMEN EJECUTIVO")
+        titulo.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
+        layout.addWidget(titulo)
+        # Resumen
+        resumen = QLabel(f"""
+    📊 DETECCIÓN AUTOMÁTICA:
+    ├── 🟢 {len(analisis['nuevos'])} REGISTROS NUEVOS
+    ├── 🟡 {len(analisis['existentes'])} REGISTROS EXISTENTES  
+    └── 🔴 {len(analisis['conflictos_merge'])} CONFLICTOS
+
+    ⚡ CONFIGURACIÓN AVANZADA:
+    • Preservar datos BD si Excel está vacío
+    • No sobrescribir fechas de auditoría  
+    • Ejecutar en lotes (rollback seguro)
+    """)
+        layout.addWidget(resumen)
+        # Estrategias
+        estrategia_group = QGroupBox("🎯 ESTRATEGIA PARA REGISTROS EXISTENTES")
+        estrategia_layout = QVBoxLayout(estrategia_group)
+        self.radio_actualizar = QRadioButton("✅ ACTUALIZAR automáticamente (RECOMENDADO)")
+        self.radio_solo_nuevos = QRadioButton("📥 SOLO AGREGAR NUEVOS (conservar datos BD)")
+        self.radio_actualizar.setChecked(True)
+        estrategia_layout.addWidget(self.radio_actualizar)
+        estrategia_layout.addWidget(self.radio_solo_nuevos)
+        layout.addWidget(estrategia_group)
+        # Botones
+        btn_layout = QHBoxLayout()
+        btn_ejecutar = QPushButton("⚡ EJECUTAR IMPORTACIÓN")
+        btn_ejecutar.clicked.connect(dialog.accept)
+        btn_cancelar = QPushButton("❌ CANCELAR")
+        btn_cancelar.clicked.connect(dialog.reject)
+        btn_layout.addWidget(btn_ejecutar)
+        btn_layout.addWidget(btn_cancelar)
+        layout.addLayout(btn_layout)
+        result = dialog.exec_()
+        if result == QDialog.Accepted:
+            if self.radio_actualizar.isChecked():
+                return "ACTUALIZAR"
+            else:
+                return "SOLO_NUEVOS"
+        return None
+
+    def _ejecutar_importacion_masiva(self, analisis, estrategia):
+        """Ejecuta importación masiva con merge inteligente y lotes"""
+        try:
+            # Usar el DataFrame válido guardado
+            df = getattr(self, '_df_importacion_valido', None)
+            if df is None:
+                QMessageBox.critical(self, "❌ Error", "No se encontró el DataFrame válido para importar.")
+                return
+
+            # Configurar UI
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, analisis['total_registros'])
+            self.log_area.clear()
+
+            resultados = {'exitosos': 0, 'actualizados': 0, 'errores': []}
+
+            # Dividir en lotes de 100
+            lotes = [df[i:i+100] for i in range(0, len(df), 100)]
+
+            for i, lote in enumerate(lotes):
+                try:
+                    resultado_lote = self._procesar_lote(lote, estrategia)
+                    resultados['exitosos'] += resultado_lote['exitosos']
+                    resultados['actualizados'] += resultado_lote['actualizados']
+
+                    # Commit del lote
+                    self.db.conn.commit()
+
+                    # Actualizar progreso
+                    progreso = min((i + 1) * 100, analisis['total_registros'])
+                    self.progress_bar.setValue(progreso)
+                    self.log_area.append(f"✅ Lote {i+1}/{len(lotes)} procesado")
+                    QApplication.processEvents()
+
+                except Exception as e:
+                    self.db.conn.rollback()
+                    resultados['errores'].append(f"Lote {i+1}: {str(e)}")
+                    continue
+
+            # Mostrar resultados finales
+            self._mostrar_resultado_importacion(resultados)
+
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Error", f"Error en importación masiva:\n{str(e)}")
         finally:
             self.progress_bar.setVisible(False)
             self.actualizar_estadisticas()
@@ -743,3 +779,119 @@ class BienDialog(QDialog):
             return str(valor) if valor is not None else ""
         except (KeyError, IndexError):
             return ""
+        
+    def _procesar_lote(self, lote, estrategia):
+        """Procesa un lote de registros"""
+        resultado = {'exitosos': 0, 'actualizados': 0, 'errores': []}
+        for _, fila in lote.iterrows():
+            try:
+                ficha = str(fila.get('ficha', '')).strip()
+                tipo = str(fila.get('tipo', '')).strip()
+                marca = str(fila.get('marca', '')).strip()
+                modelo = str(fila.get('modelo', '')).strip()
+                serie = str(fila.get('serie', '')).strip()
+                imei = str(fila.get('imei', '')).strip()
+
+                # Usar bien_existe para lógica de duplicados real
+                if self.db.bien_existe(ficha, tipo, marca, modelo, serie, imei):
+                    if estrategia == "ACTUALIZAR":
+                        if self._actualizar_bien_existente(fila):
+                            resultado['actualizados'] += 1
+                        else:
+                            resultado['errores'].append(f"No se pudo actualizar bien con ficha {ficha}")
+                else:
+                    if self._crear_bien_desde_fila(fila):
+                        resultado['exitosos'] += 1
+                    else:
+                        resultado['errores'].append(f"No se pudo crear bien con ficha {ficha}")
+            except Exception as e:
+                resultado['errores'].append(f"Error procesando ficha {ficha}: {e}")
+        return resultado
+
+    def _actualizar_bien_existente(self, fila):
+        """Actualiza bien existente con merge inteligente - Excel → BD solo campos no vacíos"""
+        try:
+            ficha = str(fila.get('ficha', '')).strip()
+            bien_actual = self.db.obtener_bien_por_ficha(ficha)
+            
+            if not bien_actual:
+                return False
+            
+            # Merge inteligente: solo actualizar campos no vacíos del Excel
+            campos_actualizados = []
+            for campo in ['tipo', 'marca', 'modelo', 'serie', 'estado', 'nombre', 
+                        'apellido', 'dni_cuit', 'institucional', 'descripcion',
+                        'prd', 'anio_prd', 'monto_original', 'linea', 'sim', 'empresa', 'imei']:
+                
+                valor_excel = str(fila.get(campo, '')).strip()
+                valor_actual = str(bien_actual.get(campo, '')).strip()
+                
+                # Solo actualizar si Excel tiene dato y es diferente
+                if valor_excel and valor_excel != valor_actual:
+                    bien_actual[campo] = valor_excel
+                    campos_actualizados.append(campo)
+            
+            # Solo guardar si hubo cambios
+            if campos_actualizados:
+                bien_actual['fecha_actualizacion'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                return self.db.actualizar_bien(bien_actual['id'], bien_actual)
+            
+            return True  # No hubo cambios pero no es error
+            
+        except Exception as e:
+            print(f"Error actualizando bien {fila.get('ficha')}: {e}")
+            return False
+
+    def _crear_bien_desde_fila(self, fila):
+        """Crea nuevo bien desde fila Excel"""
+        try:
+            bien_data = {
+                "ficha": str(fila.get("ficha", "")),
+                "tipo": str(fila.get("tipo", "")),
+                "marca": str(fila.get("marca", "")),
+                "modelo": str(fila.get("modelo", "")),
+                "serie": str(fila.get("serie", "")),
+                "linea": str(fila.get("linea", "")),
+                "sim": str(fila.get("sim", "")),
+                "empresa": str(fila.get("empresa", "")),
+                "imei": str(fila.get("imei", "")),
+                "nombre": str(fila.get("nombre", "")),
+                "apellido": str(fila.get("apellido", "")),
+                "dni_cuit": str(fila.get("dni_cuit", "")),
+                "institucional": str(fila.get("institucional", "")),
+                "descripcion": str(fila.get("descripcion", "")),
+                "estado": str(fila.get("estado", "En depósito")),
+                "fecha_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "monto_original": str(fila.get("monto_original", "")),
+                "prd": str(fila.get("prd", "")),
+                "anio_prd": str(fila.get("anio_prd", ""))
+            }
+            
+            return self.db.add_bien(bien_data)
+            
+        except Exception as e:
+            print(f"Error creando bien {fila.get('ficha')}: {e}")
+            return False
+
+    def _mostrar_resultado_importacion(self, resultados):
+        """Muestra reporte final de importación"""
+        mensaje = f"""
+    ✅ IMPORTACIÓN MASIVA COMPLETADA
+
+    📊 RESULTADOS:
+    ├── 🟢 {resultados['exitosos']} REGISTROS NUEVOS
+    ├── 🔄 {resultados['actualizados']} REGISTROS ACTUALIZADOS  
+    └── ❌ {len(resultados['errores'])} ERRORES
+
+    💾 Total procesado: {resultados['exitosos'] + resultados['actualizados'] + len(resultados['errores'])}
+    """
+        
+        if resultados['errores']:
+            mensaje += f"\n🔍 Primeros errores:\n"
+            for error in resultados['errores'][:3]:
+                mensaje += f"   • {error}\n"
+            if len(resultados['errores']) > 3:
+                mensaje += f"   ... y {len(resultados['errores']) - 3} más\n"
+        
+        self.log_area.append(mensaje)
+        QMessageBox.information(self, "✅ Importación Completada", mensaje)

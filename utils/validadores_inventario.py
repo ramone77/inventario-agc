@@ -3,57 +3,31 @@ from collections import defaultdict
 import sys
 
 def analizador_excel_agresivo(ruta_archivo):
-    """
-    Versión SIMPLE - Solo busca duplicados por ficha, serie, IMEI
-    """
+    """Scan rápido - solo duplicados críticos"""
     try:
         df = pd.read_excel(ruta_archivo)
         
-        conflictos = {
-            'fichas_duplicadas': {},
-            'series_duplicadas': {}, 
-            'imeis_duplicados': {},
-            'total_registros': len(df),
-            'bloqueado': False
-        }
-        
-        # 1. BUSCAR FICHAS DUPLICADAS
+        # 1. FICHAS DUPLICADAS (siempre bloqueante)
         fichas_dup = df[df.duplicated('ficha', keep=False)]
         if not fichas_dup.empty:
-            for ficha in fichas_dup['ficha'].unique():
-                conflictos['fichas_duplicadas'][ficha] = "DUPLICADO_EN_EXCEL"
-        
-        # 2. BUSCAR SERIES DUPLICADAS (ignorar vacíos y "SIN SERIE")
-        series_filtradas = df[
-            df['serie'].notna() & 
-            ~df['serie'].isin(['', 'SIN SERIE', 'S/N'])
-        ]
-        series_dup = series_filtradas[series_filtradas.duplicated('serie', keep=False)]
+            return {'bloqueado': True, 'motivo': 'FICHAS_DUPLICADAS', 'detalle': fichas_dup['ficha'].unique().tolist(), 'total_registros': len(df)}, None
+
+        # 2. SERIES DUPLICADAS (solo si no vacías)
+        series_validas = df[df['serie'].notna() & (df['serie'] != '') & (~df['serie'].astype(str).str.upper().isin(['SIN SERIE', 'S/N', 'N/A']))]
+        series_dup = series_validas[series_validas.duplicated('serie', keep=False)]
         if not series_dup.empty:
-            for serie in series_dup['serie'].unique():
-                conflictos['series_duplicadas'][serie] = "DUPLICADO_EN_EXCEL"
-        
-        # 3. BUSCAR IMEIs DUPLICADOS (ignorar vacíos)
-        imeis_filtrados = df[
-            df['imei'].notna() & 
-            ~df['imei'].isin(['', '0'])
-        ]
-        imeis_dup = imeis_filtrados[imeis_filtrados.duplicated('imei', keep=False)]
+            return {'bloqueado': True, 'motivo': 'SERIES_DUPLICADAS', 'detalle': series_dup['serie'].unique().tolist(), 'total_registros': len(df)}, None
+
+        # 3. IMEIs DUPLICADOS (solo si no vacíos)  
+        imeis_validos = df[df['imei'].notna() & (df['imei'] != '') & (df['imei'] != '0') & (~df['imei'].astype(str).str.upper().isin(['N/A', 'NA']))]
+        imeis_dup = imeis_validos[imeis_validos.duplicated('imei', keep=False)]
         if not imeis_dup.empty:
-            for imei in imeis_dup['imei'].unique():
-                conflictos['imeis_duplicados'][imei] = "DUPLICADO_EN_EXCEL"
-        
-        # BLOQUEAR si hay CUALQUIER duplicado
-        conflictos['bloqueado'] = any([
-            conflictos['fichas_duplicadas'],
-            conflictos['series_duplicadas'],
-            conflictos['imeis_duplicados']
-        ])
-        
-        return conflictos, df
+            return {'bloqueado': True, 'motivo': 'IMEIS_DUPLICADOS', 'detalle': imeis_dup['imei'].unique().tolist(), 'total_registros': len(df)}, None
+
+        return {'bloqueado': False, 'total_registros': len(df)}, df
         
     except Exception as e:
-        return {'error': str(e), 'bloqueado': True}, None
+        return {'bloqueado': True, 'motivo': f'ERROR_LECTURA: {str(e)}', 'total_registros': 0}, None
 
 def generar_reporte_bloqueo(conflictos):
     """
