@@ -1,0 +1,24 @@
+{
+    "responsables": [
+        {
+            "nombre": "SANTIAGO JOAQUÍN LÓPEZ",
+            "dni": "29.989.358", 
+            "cargo": "Responsable de Patrimonio"
+        },
+        {
+            "nombre": "RUBEN LAZARTE", 
+            "dni": "32.456.789",
+            "cargo": "Coordinador"
+        },
+        {
+            "nombre": "MARÍA GARCÍA",
+            "dni": "30.123.456",
+            "cargo": "Administrativa"
+        },
+        {
+            "nombre": "CARLOS LÓPEZ", 
+            "dni": "31.789.012",
+            "cargo": "Administrativo"
+        }
+    ]
+}
