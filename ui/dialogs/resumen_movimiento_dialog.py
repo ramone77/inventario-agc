@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdi
                              QPushButton, QGroupBox, QScrollArea, QWidget, QMessageBox,
                              QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget, QProgressBar)
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QDesktopServices, QFont, QColor
+from PyQt5.QtGui import QDesktopServices, QFont, QColor, QTextOption
 import os
 import datetime
 
@@ -20,8 +20,22 @@ class ResumenMovimientoDialog(QDialog):
         self.movimiento = movimiento
         self.bienes_movimiento = bienes_movimiento
         self.parent = parent
-        self.setWindowTitle(f"🔍 Resumen Detallado - Movimiento #{movimiento['id']}")
-        self.setMinimumSize(1000, 750)
+        
+        # 📐 TAMAÑOS OPTIMIZADOS
+        total_bienes = len(bienes_movimiento)
+        
+        # Altura base según cantidad de bienes
+        if total_bienes <= 5:
+            altura_base = 600
+        elif total_bienes <= 10:
+            altura_base = 700
+        else:
+            altura_base = 800
+        
+        self.setWindowTitle(f"🔍 Resumen - Movimiento #{movimiento['id']} ({total_bienes} bienes)")
+        self.setMinimumSize(850, altura_base - 100)  # Mínimo
+        self.resize(900, altura_base)  # Tamaño inicial
+        
         self.setStyleSheet("""
             QDialog {
                 background-color: #f5f7fa;
@@ -195,28 +209,48 @@ class ResumenMovimientoDialog(QDialog):
         
         layout.addWidget(stats_group)
         
-        # === OBSERVACIONES ===
+        # === OBSERVACIONES COMPACTAS ===
         obs_group = QGroupBox("📝 OBSERVACIONES")
         obs_group.setStyleSheet(self._get_estilo_grupo("obs"))
         obs_layout = QVBoxLayout(obs_group)
-        
-        observaciones = self.movimiento.get('observaciones', 'No hay observaciones registradas.')
+
+        observaciones = self.movimiento.get('observaciones', 'Sin observaciones')
         obs_text = QTextEdit()
+
+        # Versión compacta inteligente
+        if not observaciones or observaciones == 'Sin observaciones':
+            obs_text.setMaximumHeight(25)
+            obs_text.setFixedHeight(25)
+        else:
+            # Calcular altura según contenido
+            lineas = observaciones.count('\n') + 1
+            altura = min(25 + (lineas * 12), 60)  # 12px por línea, máximo 60px
+            obs_text.setMaximumHeight(altura)
+            obs_text.setMinimumHeight(25)
+
         obs_text.setPlainText(observaciones)
-        obs_text.setMaximumHeight(100)
         obs_text.setReadOnly(True)
         obs_text.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #e5e7eb;
-                border-radius: 4px;
-                padding: 8px;
-                background: #f9fafb;
+                border: 1px solid #d1d5db;
+                border-radius: 3px;
+                padding: 3px 5px;
+                background: #f8fafc;
+                font-size: 10px;
             }
         """)
-        
+
+        # Ocultar barra de scroll si no es necesaria
+        obs_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Si el texto es corto, hacer wrap automático
+        if len(observaciones) < 120:
+            from PyQt5.QtGui import QTextOption
+            obs_text.setWordWrapMode(QTextOption.WordWrap)
+
         obs_layout.addWidget(obs_text)
         layout.addWidget(obs_group)
-        
+
         layout.addStretch()
         self.tabs.addTab(tab, "📈 Resumen")
     
@@ -249,7 +283,7 @@ class ResumenMovimientoDialog(QDialog):
         self.tabs.addTab(tab, "📦 Bienes")
     
     def _configurar_tabla_bienes(self):
-        """Configura tabla de bienes con columnas optimizadas"""
+        """Configura tabla de bienes con columnas optimizadas y altura dinámica"""
         columnas = [
             ("Ficha", 80), ("Tipo", 100), ("Marca", 100), ("Modelo", 120),
             ("Serie", 120), ("IMEI", 120), ("PRD", 80), ("Estado", 100),
@@ -260,7 +294,7 @@ class ResumenMovimientoDialog(QDialog):
         self.tabla_bienes.setHorizontalHeaderLabels([c[0] for c in columnas])
         self.tabla_bienes.setRowCount(len(self.bienes_movimiento))
         
-        # Llenar tabla
+        # Llenar tabla con datos
         for row, bien in enumerate(self.bienes_movimiento):
             # Columna 0: Ficha
             item_ficha = QTableWidgetItem(bien.get('ficha', ''))
@@ -272,10 +306,16 @@ class ResumenMovimientoDialog(QDialog):
             tipo_item.setForeground(QColor(self._get_color_por_tipo(bien.get('tipo', ''))))
             self.tabla_bienes.setItem(row, 1, tipo_item)
             
-            # Columna 2-5: Datos técnicos
+            # Columna 2: Marca
             self.tabla_bienes.setItem(row, 2, QTableWidgetItem(bien.get('marca', '')))
+            
+            # Columna 3: Modelo
             self.tabla_bienes.setItem(row, 3, QTableWidgetItem(bien.get('modelo', '')))
+            
+            # Columna 4: Serie
             self.tabla_bienes.setItem(row, 4, QTableWidgetItem(bien.get('serie', '')))
+            
+            # Columna 5: IMEI
             self.tabla_bienes.setItem(row, 5, QTableWidgetItem(bien.get('imei', '')))
             
             # Columna 6: PRD
@@ -298,13 +338,48 @@ class ResumenMovimientoDialog(QDialog):
             asignado_item = QTableWidgetItem(asignado)
             self.tabla_bienes.setItem(row, 8, asignado_item)
         
+        # 🔧 CALCULAR ALTURA DINÁMICA
+        altura_cabecera = 40  # Altura del header
+        altura_fila = 28      # Altura por fila (ajustado)
+        margen_extra = 60     # Espacio para bordes y scroll
+        
+        cantidad_filas = len(self.bienes_movimiento)
+        
+        # Configurar límites de visualización
+        if cantidad_filas == 0:
+            # Tabla vacía - altura mínima
+            filas_a_mostrar = 3
+        elif cantidad_filas <= 6:
+            # Pocos bienes - mostrar todos
+            filas_a_mostrar = cantidad_filas
+        elif cantidad_filas <= 10:
+            # Cantidad media - mostrar 6 filas con scroll
+            filas_a_mostrar = 6
+        else:
+            # Muchos bienes - mostrar 8 filas con scroll
+            filas_a_mostrar = 8
+        
+        # Calcular altura total
+        altura_total = altura_cabecera + (filas_a_mostrar * altura_fila) + margen_extra
+        
+        # Aplicar límites de altura
+        altura_minima = altura_cabecera + (3 * altura_fila) + margen_extra  # Mínimo 3 filas
+        altura_maxima = altura_cabecera + (10 * altura_fila) + margen_extra  # Máximo 10 filas
+        
+        self.tabla_bienes.setMinimumHeight(altura_minima)
+        self.tabla_bienes.setMaximumHeight(min(altura_total, altura_maxima))
+        
+        # Información de debug
+        print(f"📊 Tabla bienes: {cantidad_filas} bienes, muestra {filas_a_mostrar} filas")
+        print(f"   Altura: {self.tabla_bienes.maximumHeight()}px (min: {altura_minima}px, max: {altura_maxima}px)")
+        
         # Configurar header
         header = self.tabla_bienes.horizontalHeader()
         for i, (_, width) in enumerate(columnas):
             header.setSectionResizeMode(i, QHeaderView.Interactive)
             self.tabla_bienes.setColumnWidth(i, width)
         
-        # Conectar doble click
+        # Conectar doble click para ver historial
         self.tabla_bienes.doubleClicked.connect(self._ver_historial_bien)
         
         # Estilo de la tabla
@@ -313,14 +388,38 @@ class ResumenMovimientoDialog(QDialog):
                 gridline-color: #e5e7eb;
                 selection-background-color: #dbeafe;
                 selection-color: #1e40af;
+                border: 1px solid #e5e7eb;
+                border-radius: 4px;
+                alternate-background-color: #f9fafb;
             }
             QHeaderView::section {
                 background-color: #f3f4f6;
                 padding: 8px;
                 border: 1px solid #e5e7eb;
                 font-weight: bold;
+                color: #374151;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #f3f4f6;
+                width: 10px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background: #d1d5db;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #9ca3af;
             }
         """)
+        
+        # Habilitar colores alternados
+        self.tabla_bienes.setAlternatingRowColors(True)
     
     def _crear_tab_informacion_tecnica(self):
         """Crea pestaña con información técnica y logs"""
@@ -377,7 +476,7 @@ class ResumenMovimientoDialog(QDialog):
         tech_text = QTextEdit()
         tech_text.setHtml(resumen_html)
         tech_text.setReadOnly(True)
-        tech_text.setMaximumHeight(200)
+        tech_text.setMaximumHeight(150)
         
         tech_layout.addWidget(tech_text)
         layout.addWidget(tech_group)
@@ -829,11 +928,27 @@ class ResumenMovimientoDialog(QDialog):
             QMessageBox.critical(self, "Error", f"No se puede subir acta:\n{str(e)}")
     
     def abrir_pdf(self):
-        """Abre el archivo PDF de la acta firmada"""
+        """Abre el archivo PDF de la acta firmada - VERSIÓN CORREGIDA"""
         archivo_pdf = self.movimiento.get('archivo_path_pdf', '')
         if archivo_pdf and os.path.exists(archivo_pdf):
             try:
-                QDesktopServices.openUrl(f"file:///{archivo_pdf}")
+                # ✅ CORREGIDO: Usar función del parent o abrir directamente
+                if hasattr(self, 'parent') and self.parent:
+                    # Usar la función corregida del parent
+                    self.parent.abrir_archivo_desde_ruta(archivo_pdf)
+                else:
+                    # Abrir directamente con método seguro
+                    import platform
+                    import subprocess
+                    
+                    sistema = platform.system()
+                    if sistema == "Windows":
+                        os.startfile(archivo_pdf)
+                    elif sistema == "Darwin":
+                        subprocess.run(["open", archivo_pdf])
+                    else:
+                        subprocess.run(["xdg-open", archivo_pdf])
+                        
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo abrir el PDF:\n{str(e)}")
         else:

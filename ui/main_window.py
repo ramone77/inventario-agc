@@ -1621,14 +1621,17 @@ class VentanaPrincipal(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo:\n{str(e)}")
 
     def abrir_archivo_desde_ruta(self, ruta_archivo):
-        """Abre un archivo con la aplicación por defecto del sistema"""
+        """Abre un archivo con la aplicación por defecto del sistema - VERSIÓN CORREGIDA"""
         try:
             if os.path.exists(ruta_archivo):
                 import platform
                 sistema = platform.system()
                 
+                # ✅ CORREGIDO: Usar QUrl.fromLocalFile() para crear QUrl válido
+                from PyQt5.QtCore import QUrl
+                
                 if sistema == "Windows":
-                    os.startfile(ruta_archivo)
+                    os.startfile(ruta_archivo)  # Windows usa startfile directamente
                 elif sistema == "Darwin":  # macOS
                     import subprocess
                     subprocess.run(["open", ruta_archivo])
