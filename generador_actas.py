@@ -28,7 +28,7 @@ class GeneradorActas:
         try:
             # Seleccionar plantilla según tipo
             if tipo == 'entrega':
-                plantilla = "UCA-GOAYF-SOPyS-PRO-01-FORM-02 Rev. 02 - Acta de entrega (Recuperado automáticamente).docx"
+                plantilla = "UCA-GOAYF-SOPyS-PRO-01-FORM-02 Rev. 02 - Acta de entrega.docx"
             else:
                 plantilla = "UCA-GOAYF-SOPyS-PRO-01-FORM-12 Rev. 01 Acta de recepcion.docx"
             

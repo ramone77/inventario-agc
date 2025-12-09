@@ -877,6 +877,7 @@ class VentanaPrincipal(QMainWindow):
         
         # Tabla de movimientos
         self.tabla_movimientos = QTableWidget()
+        self.tabla_movimientos.cellClicked.connect(self._manejar_click_acta)
         self.configurar_columnas_movimientos()
         layout.addWidget(self.tabla_movimientos)
         # ✅ CONECTAR DOBLE CLICK A FUNCIÓN DE RESUMEN
@@ -1229,7 +1230,7 @@ class VentanaPrincipal(QMainWindow):
                         
                     # ✅ SOLO COLUMNAS DE DATOS - SIN WIDGETS COMPLEJOS
                     if nombre_columna == "Acta":
-                        archivo_item = self._crear_item_archivo_movimiento_optimizado(mov)
+                        archivo_item = self._crear_item_acta_simple(mov)
                         self.tabla_movimientos.setItem(i, col_idx, archivo_item)
                         
                     elif nombre_columna == "Fecha":
@@ -1336,62 +1337,223 @@ class VentanaPrincipal(QMainWindow):
         except Exception as e:
             print(f"❌ Error aplicando ajustes de tabla: {e}")
 
-    def _crear_item_archivo_movimiento_optimizado(self, movimiento):
-        """Crea item de acta optimizado con íconos claros"""
+    def _crear_item_acta_simple(self, movimiento):
+        """Crea item de acta SIMPLIFICADO - solo PDF firmado o subir"""
         try:
             archivo_item = QTableWidgetItem()
             
-            # Verificar archivos
+            # 1. Solo verificar PDF (DOCX es temporal, no lo mostramos)
             archivo_pdf = self.safe_get(movimiento, "archivo_path_pdf")
-            archivo_docx = self.safe_get(movimiento, "archivo_path_docx")
             
-            # Compatibilidad con campo antiguo
+            # 2. Compatibilidad con campo antiguo
             if not archivo_pdf:
                 archivo_pdf = self.safe_get(movimiento, "archivo_path")
             
-            # Verificar existencia
-            pdf_existe = archivo_pdf and os.path.exists(archivo_pdf)
-            docx_existe = archivo_docx and os.path.exists(archivo_docx)
+            # 3. Verificar existencia del PDF
+            pdf_existe = False
+            if archivo_pdf:
+                # Intentar verificar si el archivo existe
+                try:
+                    pdf_existe = os.path.exists(archivo_pdf)
+                except:
+                    pdf_existe = False
             
-            # Asignar íconos y tooltips MEJORADOS
-            if pdf_existe and docx_existe:
-                archivo_item.setText("✅ PDF")
-                archivo_item.setToolTip(
-                    "Tiene PDF firmado y DOCX temporal\n"
-                    "🖱️ Click para abrir archivos"
-                )
-                archivo_item.setData(Qt.UserRole, {"pdf": archivo_pdf, "docx": archivo_docx})
+            # 4. Obtener ID del movimiento PARA SUBIR
+            movimiento_id = None
+            try:
+                # Usar safe_get para obtener el ID
+                movimiento_id_str = self.safe_get(movimiento, 'id')
+                if movimiento_id_str and movimiento_id_str.strip():
+                    movimiento_id = int(movimiento_id_str)
+            except (ValueError, TypeError) as e:
+                print(f"⚠️ Error obteniendo ID del movimiento: {e}")
+                movimiento_id = None
+            
+            # 5. DEBUG
+            print(f"🔍 Creando item acta - PDF: {archivo_pdf}, Existe: {pdf_existe}, ID: {movimiento_id}")
+            
+            # 6. Asignar texto simple según estado
+            if pdf_existe:
+                archivo_item.setText("✅ ACTA FIRMADA")
+                archivo_item.setToolTip(f"Acta firmada: {os.path.basename(archivo_pdf)}\nClick para abrir")
                 archivo_item.setForeground(Qt.darkGreen)
-            elif pdf_existe:
-                archivo_item.setText("✅ PDF")
-                archivo_item.setToolTip(
-                    f"PDF firmado: {os.path.basename(archivo_pdf)}\n"
-                    "🖱️ Click para abrir"
-                )
                 archivo_item.setData(Qt.UserRole, {"pdf": archivo_pdf})
+                
+            elif movimiento_id:
+                archivo_item.setText("📤 SUBIR ACTA")
+                archivo_item.setToolTip(f"Click para subir acta firmada (PDF)\nMovimiento ID: {movimiento_id}")
                 archivo_item.setForeground(Qt.darkBlue)
-            elif docx_existe:
-                archivo_item.setText("📝 TEMP")
-                archivo_item.setToolTip(
-                    f"DOCX temporal: {os.path.basename(archivo_docx)}\n"
-                    "🖱️ Click para abrir"
-                )
-                archivo_item.setData(Qt.UserRole, {"docx": archivo_docx})
-                archivo_item.setForeground(Qt.darkMagenta)
+                archivo_item.setData(Qt.UserRole, {"movimiento_id": movimiento_id})
+                
             else:
-                archivo_item.setText("❌")
-                archivo_item.setToolTip("Sin archivos disponibles\nDoble click en fila para más detalles")
-                archivo_item.setForeground(Qt.darkGray)
+                # Caso error: no hay PDF ni ID válido
+                archivo_item.setText("❌ ERROR")
+                archivo_item.setToolTip("Error: No se puede identificar el movimiento")
+                archivo_item.setForeground(Qt.darkRed)
             
             archivo_item.setTextAlignment(Qt.AlignCenter)
             return archivo_item
             
         except Exception as e:
-            print(f"❌ Error creando item de archivo: {e}")
+            print(f"❌ Error creando item de acta: {e}")
+            import traceback
+            traceback.print_exc()
             item = QTableWidgetItem("❌")
             item.setTextAlignment(Qt.AlignCenter)
-            item.setToolTip("Error cargando información de archivos")
+            item.setToolTip("Error cargando información")
             return item
+        
+    def _manejar_click_acta(self, row, column):
+        """Maneja clicks en la columna 'Acta' - abre o sube PDF"""
+        try:
+            # 1. Verificar que el click sea en columna "Acta"
+            nombre_columna = self._obtener_nombre_columna_por_indice(column)
+            if nombre_columna != "Acta":
+                return  # No es la columna de acta, ignorar
+                
+            # 2. Obtener el item de la tabla
+            item = self.tabla_movimientos.item(row, column)
+            if not item:
+                print(f"⚠️ No hay item en fila {row}, columna {column}")
+                return
+                
+            # 3. Obtener datos almacenados en UserRole
+            datos = item.data(Qt.UserRole)
+            
+            # 4. DEBUG: Ver qué datos tenemos
+            print(f"🔍 Click en acta - fila {row}, datos: {datos}")
+            
+            # 5. Si no hay datos, mostrar advertencia
+            if not datos:
+                QMessageBox.warning(self, "Atención", 
+                                "No se puede procesar este movimiento.\n"
+                                "Falta información de identificación.")
+                return
+                
+            # 6. Si tiene PDF, abrirlo
+            if "pdf" in datos and datos["pdf"]:
+                pdf_path = datos["pdf"]
+                print(f"📄 Abriendo PDF: {pdf_path}")
+                self.abrir_archivo_desde_ruta(pdf_path)
+                
+            # 7. Si tiene movimiento_id, subir acta
+            elif "movimiento_id" in datos and datos["movimiento_id"]:
+                movimiento_id = datos["movimiento_id"]
+                print(f"📤 Subiendo acta para movimiento ID: {movimiento_id}")
+                self._subir_acta_firmada(movimiento_id)
+                
+            # 8. Si no coincide con ningún caso
+            else:
+                QMessageBox.information(self, "Información", 
+                                    "Estado del acta no reconocido.\n"
+                                    "Contacte al administrador.")
+                
+        except Exception as e:
+            print(f"❌ Error manejando click en acta: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", 
+                            f"No se pudo procesar la solicitud:\n{str(e)}")
+            
+    def _subir_acta_firmada(self, movimiento_id):
+        """Abre diálogo para subir acta firmada (PDF) y actualiza BD"""
+        try:
+            print(f"📤 Iniciando subida de acta para movimiento ID: {movimiento_id}")
+            
+            # 1. Diálogo para seleccionar archivo PDF
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, 
+                "Seleccionar Acta Firmada (PDF)",
+                "",  # Directorio inicial vacío
+                "Archivos PDF (*.pdf);;Todos los archivos (*.*)"
+            )
+            
+            if not file_path or not os.path.exists(file_path):
+                print("❌ Usuario canceló o archivo no existe")
+                return  # Usuario canceló o archivo inválido
+                
+            # 2. Verificar que sea PDF
+            if not file_path.lower().endswith('.pdf'):
+                QMessageBox.warning(self, "Formato incorrecto", 
+                                "Por favor, seleccione un archivo PDF (.pdf).")
+                return
+            
+            # 3. Verificar tamaño (opcional, máximo 10MB)
+            file_size = os.path.getsize(file_path)
+            if file_size > 10 * 1024 * 1024:  # 10MB
+                QMessageBox.warning(self, "Archivo muy grande",
+                                "El archivo PDF es muy grande (máximo 10MB).")
+                return
+            
+            # 4. Obtener datos del movimiento para nombre descriptivo
+            movimiento = self.db.obtener_movimiento_por_id(movimiento_id)
+            if not movimiento:
+                QMessageBox.critical(self, "Error", 
+                                f"No se encontró el movimiento ID: {movimiento_id}")
+                return
+            
+            print(f"✅ Movimiento encontrado: {movimiento.get('tipo', 'N/A')}")
+            
+            # 5. Usar MovimientoManager para guardar correctamente
+            try:
+                from core.movimiento_manager import MovimientoManager
+                movimiento_manager = MovimientoManager(self.db)
+                
+                ruta_pdf_final = movimiento_manager._guardar_pdf_correctamente(
+                    file_path, 
+                    movimiento_id, 
+                    movimiento
+                )
+                
+                if not ruta_pdf_final:
+                    QMessageBox.critical(self, "Error", 
+                                    "No se pudo guardar el PDF en la carpeta local.")
+                    return
+                    
+                print(f"✅ PDF guardado en: {ruta_pdf_final}")
+                
+            except Exception as mgr_error:
+                print(f"⚠️ Error con MovimientoManager: {mgr_error}")
+                # Fallback: guardar directamente
+                import shutil
+                import datetime
+                
+                # Crear carpeta si no existe
+                os.makedirs("actas_local", exist_ok=True)
+                
+                # Nombre descriptivo
+                fecha = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                nombre = f"ACTA_{movimiento_id}_{fecha}.pdf"
+                ruta_pdf_final = os.path.join("actas_local", nombre)
+                
+                shutil.copy2(file_path, ruta_pdf_final)
+                print(f"✅ PDF guardado (fallback): {ruta_pdf_final}")
+            
+            # 6. Actualizar base de datos
+            if self.db.actualizar_pdf_movimiento(movimiento_id, ruta_pdf_final):
+                print(f"✅ Base de datos actualizada para movimiento {movimiento_id}")
+                
+                # 7. Actualizar tabla visualmente
+                self.cargar_movimientos()
+                
+                # 8. Mostrar confirmación
+                QMessageBox.information(self, "✅ Éxito", 
+                                    f"Acta firmada guardada exitosamente.\n\n"
+                                    f"📄 Archivo: {os.path.basename(ruta_pdf_final)}\n"
+                                    f"📁 Ubicación: actas_local/\n"
+                                    f"🆔 Movimiento: {movimiento_id}")
+            else:
+                QMessageBox.critical(self, "Error", 
+                                "No se pudo actualizar la base de datos.\n"
+                                "El archivo se guardó pero no se vinculó al movimiento.")
+                
+        except Exception as e:
+            print(f"❌ Error subiendo acta: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", 
+                            f"No se pudo subir el acta:\n{str(e)}")
+        
 
     def _manejar_click_tabla_movimientos(self, row, column):
         """Maneja los clicks en la tabla de movimientos"""
@@ -1458,7 +1620,7 @@ class VentanaPrincipal(QMainWindow):
             print(f"❌ Error abriendo archivo del movimiento: {e}")
             QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo:\n{str(e)}")
 
-    def _abrir_archivo_con_app(self, ruta_archivo):
+    def abrir_archivo_desde_ruta(self, ruta_archivo):
         """Abre un archivo con la aplicación por defecto del sistema"""
         try:
             if os.path.exists(ruta_archivo):
@@ -2732,3 +2894,4 @@ class VentanaPrincipal(QMainWindow):
                 header.setStretchLastSection(True)
             except:
                 pass
+            

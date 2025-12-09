@@ -994,17 +994,6 @@ class DB:
             print(f"❌ Error obteniendo bien por ficha: {e}")
             return None
     
-    def actualizar_pdf_movimiento(self, movimiento_id, ruta_pdf):
-        """Actualiza la ruta del PDF de un movimiento existente"""
-        try:
-            query = "UPDATE movimientos SET archivo_path = ? WHERE id = ?"
-            self.conn.execute(query, (ruta_pdf, movimiento_id))
-            self.conn.commit()  # ← Esto es importante
-            return True
-        except Exception as e:
-            print(f"❌ Error actualizando PDF del movimiento: {e}")
-            return False
-        
     def buscar_bienes_filtrados(self, filtros):
         """Query SQL optimizada con WHERE dinámico - REEMPLAZA filtro manual"""
         

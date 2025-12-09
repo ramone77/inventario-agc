@@ -3,9 +3,13 @@
 Lógica de negocio para movimientos - CON GENERACIÓN AUTOMÁTICA DE ACTAS
 """
 
+import os  # <-- AÑADE ESTA LÍNEA (para os.path.exists)
+import json
+from datetime import datetime
+from pathlib import Path  # <-- OPCIONAL pero recomendado para manejo de rutas
+
 from database.db_manager import DB
 from generador_actas import GeneradorActas
-from datetime import datetime
 
 
 class MovimientoManager:
@@ -14,44 +18,6 @@ class MovimientoManager:
     def __init__(self, db: DB):
         self.db = db
         self.generador_actas = GeneradorActas()  # Instanciamos el generador
-    
-    def crear_movimiento(self, datos_movimiento, bienes_ids, usuario_actual):
-        """Crea un movimiento CON GENERACIÓN AUTOMÁTICA DE ACTA"""
-        try:
-            # 1️⃣ PRIMERO: Obtener datos completos de los bienes
-            bienes_completos = self._obtener_datos_bienes(bienes_ids)
-            if not bienes_completos:
-                return None, "❌ No se pudieron obtener datos de los bienes"
-            
-            # 2️⃣ SEGUNDO: Generar el acta automáticamente
-            ruta_acta = self._generar_acta_automatica(
-                datos_movimiento['tipo'], 
-                bienes_completos, 
-                datos_movimiento,
-                usuario_actual
-            )
-            
-            if ruta_acta and not ruta_acta.startswith("❌"):
-                # 3️⃣ TERCERO: Guardar ruta del acta en el movimiento
-                datos_movimiento['archivo_path'] = ruta_acta
-                print(f"✅ Acta generada: {ruta_acta}")
-                # ✅ NUEVO: Abrir carpeta de actas
-                self._abrir_carpeta_actas(ruta_acta)
-                # ✅ NUEVO: Preguntar si quiere subir acta firmada
-                self._preguntar_subir_acta_firmada(ruta_acta)
-            else:
-                datos_movimiento['archivo_path'] = ""
-                print(f"⚠️ No se pudo generar acta: {ruta_acta}")
-            
-            # 4️⃣ CUARTO: Crear el movimiento en la BD
-            movimiento_id = self.db.add_movimiento(datos_movimiento, bienes_ids)
-            
-            return movimiento_id, "✅ Movimiento creado exitosamente"
-            
-        except Exception as e:
-            error_msg = f"❌ Error creando movimiento: {str(e)}"
-            print(error_msg)
-            return None, error_msg
     
     def _obtener_datos_bienes(self, bienes_ids):
         """Obtiene datos completos de los bienes para el acta"""
@@ -119,35 +85,49 @@ class MovimientoManager:
         except Exception as e:
             print(f"⚠️ No se pudo abrir la carpeta: {e}")
 
-    def _preguntar_subir_acta_firmada(self, ruta_acta):
-        """Pregunta si quiere subir el acta firmada"""
-        try:
-            from PyQt5.QtWidgets import QMessageBox, QFileDialog
-            import shutil
-            
-            respuesta = QMessageBox.question(
-                None,  # Usar None para que sea diálogo global
-                "Acta Generada",
-                "¿Querés subir el acta firmada ahora?\n\n"
-                "• Sí: Seleccioná el PDF firmado\n"
-                "• No: Podés subirlo después desde el historial",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if respuesta == QMessageBox.Yes:
-                # Seleccionar PDF firmado
-                path, _ = QFileDialog.getOpenFileName(
-                    None, "Seleccionar Acta Firmada", "", "PDF (*.pdf)"
-                )
-                if path:
-                    # Reemplazar el acta generada por la firmada
-                    shutil.copy(path, ruta_acta)
-                    print(f"✅ Acta firmada subida: {ruta_acta}")
-                    
-        except Exception as e:
-            print(f"⚠️ Error en diálogo acta firmada: {e}")
+     
+
         
+    def _guardar_pdf_correctamente(self, pdf_temp_path, movimiento_id, datos_movimiento):
+        """Guarda PDF en actas_local/ con nombre descriptivo - VERSIÓN SEGURA"""
+        try:
+            # Crear carpeta si no existe
+            import os
+            os.makedirs("actas_local", exist_ok=True)
+            
+            # Nombre descriptivo sin caracteres problemáticos
+            responsable = ""
+            if datos_movimiento.get('responsable_nombre'):
+                responsable += datos_movimiento['responsable_nombre'].replace(" ", "_")
+            if datos_movimiento.get('responsable_apellido'):
+                responsable += "_" + datos_movimiento['responsable_apellido'].replace(" ", "_")
+            
+            if not responsable:
+                responsable = "SIN_RESPONSABLE"
+            
+            tipo_mov = datos_movimiento.get('tipo', 'ENTREGA').upper().replace(" ", "_")
+            fecha = datetime.now().strftime('%Y%m%d')
+            
+            nombre_pdf = f"ACTA_{tipo_mov}_{responsable}_{fecha}.pdf"
+            ruta_final = os.path.join("actas_local", nombre_pdf)
+            
+            # Copiar (NO sobreescribir si existe)
+            import shutil
+            if os.path.exists(ruta_final):
+                # Agregar timestamp único
+                timestamp = datetime.now().strftime('%H%M%S')
+                nombre_pdf = f"ACTA_{tipo_mov}_{responsable}_{fecha}_{timestamp}.pdf"
+                ruta_final = os.path.join("actas_local", nombre_pdf)
+            
+            shutil.copy(pdf_temp_path, ruta_final)
+            
+            print(f"✅ PDF guardado correctamente en: {ruta_final}")
+            return ruta_final
+            
+        except Exception as e:
+            print(f"❌ Error guardando PDF: {e}")
+            return None  
+       
     def obtener_movimientos_detallados(self):
         """Obtiene movimientos con información completa"""
         return self.db.get_movimientos_detallados()
@@ -155,3 +135,73 @@ class MovimientoManager:
     def obtener_movimientos_por_bien(self, bien_id):
         """Obtiene todos los movimientos de un bien específico"""
         return self.db.obtener_movimientos_por_bien(bien_id)
+    
+    def guardar_movimiento_completo(self, datos_formulario, bienes_ids, usuario_actual, archivo_pdf_path=None):
+        """Guarda movimiento completo con generación automática de DOCX y PDF opcional"""
+        try:
+            print(f"🔄 Guardando movimiento completo...")
+            
+            # 1️⃣ Obtener datos completos de los bienes
+            bienes_completos = self._obtener_datos_bienes(bienes_ids)
+            if not bienes_completos:
+                return None, "❌ No se pudieron obtener datos de los bienes"
+            
+            # 2️⃣ Generar acta DOCX automáticamente
+            ruta_acta_docx = self._generar_acta_automatica(
+                datos_formulario['tipo'], 
+                bienes_completos, 
+                datos_formulario,
+                usuario_actual
+            )
+            
+            # 3️⃣ Preparar datos para BD
+            datos_bd = {
+                "tipo": datos_formulario['tipo'],
+                "fecha": datos_formulario['fecha'],
+                "responsable": datos_formulario['responsable'],
+                "responsable_nombre": datos_formulario['responsable_nombre'],
+                "responsable_apellido": datos_formulario['responsable_apellido'],
+                "responsable_dni_cuit": datos_formulario['responsable_dni_cuit'],
+                "responsable_institucional": datos_formulario['responsable_institucional'],
+                "observaciones": datos_formulario['observaciones'],
+                "numero_transferencia": datos_formulario['numero_transferencia'],
+                "archivo_path_docx": ruta_acta_docx if ruta_acta_docx and not ruta_acta_docx.startswith("❌") else ""
+            }
+            
+            # 4️⃣ Crear movimiento en BD
+            movimiento_id = self.db.add_movimiento(datos_bd, bienes_ids)
+            
+            if not movimiento_id:
+                return None, "❌ Error al crear movimiento en base de datos"
+            
+            # 5️⃣ Si hay PDF, guardarlo CORRECTAMENTE y actualizar BD
+            if archivo_pdf_path and os.path.exists(archivo_pdf_path):
+                # Guardar PDF en actas_local/ con nombre descriptivo
+                ruta_pdf_final = self._guardar_pdf_correctamente(
+                    archivo_pdf_path, 
+                    movimiento_id, 
+                    datos_formulario
+                )
+                
+                if ruta_pdf_final:
+                    # Actualizar BD con la nueva ruta
+                    if self.db.actualizar_pdf_movimiento(movimiento_id, ruta_pdf_final):
+                        print(f"✅ PDF guardado correctamente en BD: {ruta_pdf_final}")
+                    else:
+                        print(f"⚠️ PDF guardado pero no se pudo actualizar BD: {ruta_pdf_final}")
+                else:
+                    print(f"⚠️ No se pudo guardar el PDF: {archivo_pdf_path}")
+            
+            # 6️⃣ Abrir carpeta y preguntar por PDF si se generó acta
+            if ruta_acta_docx and not ruta_acta_docx.startswith("❌"):
+                self._abrir_carpeta_actas(ruta_acta_docx)
+                # ❌ ELIMINADA la llamada al diálogo molesto
+                print(f"📄 Acta generada: {ruta_acta_docx}")
+                print("💡 Podés subir el PDF firmado después desde la lista de movimientos.")
+            
+            return movimiento_id, "✅ Movimiento registrado correctamente"
+            
+        except Exception as e:
+            error_msg = f"❌ Error guardando movimiento completo: {str(e)}"
+            print(error_msg)
+            return None, error_msg    

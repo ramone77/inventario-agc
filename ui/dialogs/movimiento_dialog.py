@@ -405,8 +405,8 @@ class MovimientoDialog(QDialog):
             QMessageBox.critical(self, "❌ Error", f"Error cargando datos:\n{str(e)}")
     
     def guardar(self):
-        """Guarda el movimiento - VERSIÓN CORREGIDA CON DATOS COMPLETOS"""
-        # Validaciones
+        """Guarda el movimiento usando MovimientoManager - VERSIÓN SIMPLIFICADA"""
+        # Validaciones (mantener igual)
         bienes_ids = [item.data(Qt.UserRole) for item in self.lista_bienes.selectedItems()]
         if not bienes_ids:
             QMessageBox.warning(self, "Selección requerida", "Seleccioná al menos un bien.")
@@ -416,7 +416,7 @@ class MovimientoDialog(QDialog):
             QMessageBox.warning(self, "Datos incompletos", "Completa nombre, apellido e institucional del responsable.")
             return
         
-        # Validar fecha
+        # Validar fecha (mantener igual)
         try:
             fecha_str = self.fecha_entrega.text().strip()
             fecha_dt = datetime.strptime(fecha_str, "%d/%m/%Y")
@@ -425,10 +425,10 @@ class MovimientoDialog(QDialog):
             QMessageBox.warning(self, "Fecha inválida", "La fecha de entrega debe tener formato DD/MM/AAAA (ej: 25/12/2024)")
             return
         
-        # Preparar datos del movimiento
+        # Preparar datos del formulario
         responsable_completo = f"{self.responsable_nombre.text()} {self.responsable_apellido.text()}"
         
-        mov_data = {
+        datos_formulario = {
             "tipo": self.tipo.currentText(),
             "fecha": fecha_bd,
             "responsable": responsable_completo,
@@ -437,17 +437,20 @@ class MovimientoDialog(QDialog):
             "responsable_dni_cuit": self.responsable_cuit.text().strip(),
             "responsable_institucional": self.responsable_institucional.currentText(),
             "observaciones": self.observaciones.toPlainText().strip(),
-            "archivo_path": self.archivo_path,
             "numero_transferencia": self.numero_transferencia.text().strip()
         }
         
-        # ✅ CORREGIDO: Pasar usuario_actual completo (no solo el ID)
+        # ✅ NUEVO: Usar MovimientoManager para la lógica completa
         try:
             from core.movimiento_manager import MovimientoManager
             movimiento_mgr = MovimientoManager(self.db)
             
-            # ✅ CORRECCIÓN: Pasar self.usuario_actual completo
-            movimiento_id, mensaje = movimiento_mgr.crear_movimiento(mov_data, bienes_ids, self.usuario_actual)
+            movimiento_id, mensaje = movimiento_mgr.guardar_movimiento_completo(
+                datos_formulario, 
+                bienes_ids, 
+                self.usuario_actual,
+                self.archivo_path  # PDF si se seleccionó
+            )
             
             if movimiento_id:
                 QMessageBox.information(self, "✅ Éxito", f"Movimiento registrado correctamente\n{mensaje}")
@@ -457,3 +460,4 @@ class MovimientoDialog(QDialog):
                 
         except Exception as e:
             QMessageBox.critical(self, "❌ Error", f"Error inesperado:\n{str(e)}")
+            
