@@ -1458,7 +1458,7 @@ class VentanaPrincipal(QMainWindow):
     def _subir_acta_firmada(self, movimiento_id):
         """Abre diálogo para subir acta firmada (PDF) y actualiza BD"""
         try:
-            print(f"📤 Iniciando subida de acta para movimiento ID: {movimiento_id}")
+            print(f"📤 DEBUG _subir_acta_firmada INICIO - Mov ID: {movimiento_id}")
             
             # 1. Diálogo para seleccionar archivo PDF
             file_path, _ = QFileDialog.getOpenFileName(
@@ -1472,6 +1472,9 @@ class VentanaPrincipal(QMainWindow):
                 print("❌ Usuario canceló o archivo no existe")
                 return  # Usuario canceló o archivo inválido
                 
+            print(f"📤 DEBUG: Archivo seleccionado: {file_path}")
+            print(f"📤 DEBUG: ¿Existe?: {os.path.exists(file_path)}")
+            
             # 2. Verificar que sea PDF
             if not file_path.lower().endswith('.pdf'):
                 QMessageBox.warning(self, "Formato incorrecto", 
@@ -1499,11 +1502,18 @@ class VentanaPrincipal(QMainWindow):
                 from core.movimiento_manager import MovimientoManager
                 movimiento_manager = MovimientoManager(self.db)
                 
+                print(f"📤 DEBUG: Llamando a _guardar_pdf_correctamente...")
+                print(f"   PDF temp: {file_path}")
+                print(f"   Mov ID: {movimiento_id}")
+                print(f"   Tipo: {movimiento.get('tipo', 'N/A')}")
+                
                 ruta_pdf_final = movimiento_manager._guardar_pdf_correctamente(
                     file_path, 
                     movimiento_id, 
                     movimiento
                 )
+                
+                print(f"📤 DEBUG: Retorno de _guardar_pdf_correctamente: {ruta_pdf_final}")
                 
                 if not ruta_pdf_final:
                     QMessageBox.critical(self, "Error", 
@@ -1540,13 +1550,13 @@ class VentanaPrincipal(QMainWindow):
                 QMessageBox.information(self, "✅ Éxito", 
                                     f"Acta firmada guardada exitosamente.\n\n"
                                     f"📄 Archivo: {os.path.basename(ruta_pdf_final)}\n"
-                                    f"📁 Ubicación: actas_local/\n"
+                                    f"📁 Ubicación: {os.path.dirname(ruta_pdf_final)}\n"
                                     f"🆔 Movimiento: {movimiento_id}")
             else:
                 QMessageBox.critical(self, "Error", 
                                 "No se pudo actualizar la base de datos.\n"
                                 "El archivo se guardó pero no se vinculó al movimiento.")
-                
+                    
         except Exception as e:
             print(f"❌ Error subiendo acta: {e}")
             import traceback

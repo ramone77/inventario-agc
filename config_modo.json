@@ -2,7 +2,7 @@
     "modo_trabajo": "local_con_sincronizacion",
     "db_maestra_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\inventario.db",
     "db_cache_local": "C:\\Users\\20929508727\\InventarioApp\\inventario_agc\\inventario_cache.db",
-    "actas_folder_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\actas",
+    "actas_folder_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\actas_red",
     "actas_folder_local": "C:\\Users\\20929508727\\InventarioApp\\inventario_agc\\actas_local",
     "auto_sincronizar": true,
     "intervalo_sincronizacion": 1800,
@@ -14,5 +14,5 @@
     "db_path_red": "M:\\Patrimonio\\01 PATRIMONIO\\InventarioApp\\inventario.db",
     "db_path_local": "C:\\Users\\20929508727\\InventarioApp\\inventario_agc\\inventario_cache.db",
     "usuario_actual": "",
-    "ultima_sincronizacion": "2025-11-28T15:16:00.590330"
+    "ultima_sincronizacion": "2025-12-10T19:27:17.138262"
 }

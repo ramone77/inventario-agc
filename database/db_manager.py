@@ -815,7 +815,7 @@ class DB:
             return None
 
     def obtener_movimientos_por_bien(self, bien_id):
-        """Obtiene todos los movimientos de un bien específico para el timeline"""
+        """Obtiene todos los movimientos de un bien específico para el timeline - VERSIÓN CORREGIDA"""
         try:
             cur = self.conn.cursor()
             query = """
@@ -829,7 +829,7 @@ class DB:
                     m.responsable_dni_cuit,
                     m.responsable_institucional,
                     m.observaciones,
-                    m.archivo_path,
+                    m.archivo_path_pdf,        
                     m.numero_transferencia,
                     b.ficha,
                     b.tipo as tipo_bien,
@@ -858,10 +858,19 @@ class DB:
             return []
         
     def obtener_movimiento_por_id(self, movimiento_id):
-        """Obtiene un movimiento por su ID"""
+        """Obtiene un movimiento por su ID - VERSIÓN ACTUALIZADA"""
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT * FROM movimientos WHERE id = ?", (movimiento_id,))
+            # ✅ CORREGIDO: Buscar archivo_path_pdf, no archivo_path
+            cur.execute("""
+                SELECT id, tipo, fecha, responsable, responsable_nombre, 
+                    responsable_apellido, responsable_dni_cuit, 
+                    responsable_institucional, observaciones, 
+                    archivo_path_pdf, archivo_path_docx, 
+                    numero_transferencia 
+                FROM movimientos 
+                WHERE id = ?
+            """, (movimiento_id,))
             resultado = cur.fetchone()
             
             if resultado:
@@ -1124,12 +1133,31 @@ class DB:
             return self.list_bienes()
         
     def actualizar_pdf_movimiento(self, movimiento_id, ruta_pdf):
-        """Actualiza la ruta del PDF de un movimiento existente"""
+        """Actualiza la ruta del PDF de un movimiento existente - VERSIÓN CORREGIDA"""
         try:
+            import os
+            from config.settings import get_config
+            
+            print(f"🔍 DEBUG actualizar_pdf_movimiento:")
+            print(f"   Ruta PDF recibida: {ruta_pdf}")
+            print(f"   ¿Es ruta absoluta?: {os.path.isabs(ruta_pdf) if ruta_pdf else 'No ruta'}")
+            
+            # ✅ SI la ruta es solo nombre de archivo, convertir a ruta completa
+            if ruta_pdf and not os.path.isabs(ruta_pdf):
+                config = get_config()
+                ruta_completa = os.path.join(config["actas_folder_local"], ruta_pdf)
+                print(f"   Convirtiendo a ruta completa: {ruta_completa}")
+                ruta_pdf = ruta_completa
+            
+            print(f"   Guardando en BD: {ruta_pdf}")
+            
             query = "UPDATE movimientos SET archivo_path_pdf = ? WHERE id = ?"
             self.conn.execute(query, (ruta_pdf, movimiento_id))
             self.conn.commit()
+            
+            print(f"✅ PDF actualizado en BD para movimiento {movimiento_id}")
             return True
+            
         except Exception as e:
             print(f"❌ Error actualizando PDF del movimiento: {e}")
             return False

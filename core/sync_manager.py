@@ -262,3 +262,56 @@ class SyncManager(QObject):
         """Detiene la sincronización automática"""
         self.timer.stop()
         print("⏹️ Sincronización automática detenida")
+        
+def sincronizar_archivos_pdf(self):
+    """Sincroniza archivos PDF entre local y red"""
+    try:
+        from config.settings import get_config, get_modo_trabajo
+        
+        config = get_config()
+        modo = get_modo_trabajo()
+        
+        # Solo sincronizar si estamos en modo de sincronización
+        if modo != "local_con_sincronizacion":
+            print("📭 Modo no requiere sincronización de archivos")
+            return
+        
+        print("🔄 Sincronizando archivos PDF...")
+        
+        # 1. LOCAL → RED (subir nuevos archivos locales)
+        if os.path.exists(config["actas_folder_local"]):
+            archivos_locales = os.listdir(config["actas_folder_local"])
+        else:
+            archivos_locales = []
+        
+        if os.path.exists(config["actas_folder_red"]):
+            archivos_red = os.listdir(config["actas_folder_red"])
+        else:
+            archivos_red = []
+        
+        # Subir archivos nuevos de local a red
+        for archivo in archivos_locales:
+            if archivo.endswith('.pdf') and archivo not in archivos_red:
+                try:
+                    origen = os.path.join(config["actas_folder_local"], archivo)
+                    destino = os.path.join(config["actas_folder_red"], archivo)
+                    shutil.copy2(origen, destino)
+                    print(f"  📤 Subido a red: {archivo}")
+                except Exception as e:
+                    print(f"  ⚠️ Error subiendo {archivo}: {e}")
+        
+        # 2. RED → LOCAL (descargar archivos nuevos de red)
+        for archivo in archivos_red:
+            if archivo.endswith('.pdf') and archivo not in archivos_locales:
+                try:
+                    origen = os.path.join(config["actas_folder_red"], archivo)
+                    destino = os.path.join(config["actas_folder_local"], archivo)
+                    shutil.copy2(origen, destino)
+                    print(f"  📥 Descargado de red: {archivo}")
+                except Exception as e:
+                    print(f"  ⚠️ Error descargando {archivo}: {e}")
+        
+        print("✅ Sincronización PDF completada")
+        
+    except Exception as e:
+        print(f"❌ Error sincronizando PDFs: {e}")

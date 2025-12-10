@@ -248,7 +248,7 @@ class HistorialDialog(QDialog):
                 area = mov.get('responsable_institucional', '')
                 
                 # PDF
-                archivo_pdf = mov.get('archivo_path', '')
+                archivo_pdf = mov.get('archivo_path_pdf', '')  # ← ✅ CORRECTO
                 if archivo_pdf and os.path.exists(archivo_pdf):
                     pdf_text = "📎 PDF"
                     pdf_tooltip = f"Archivo: {os.path.basename(archivo_pdf)}"
@@ -441,7 +441,7 @@ class HistorialDialog(QDialog):
             
             if fila < len(movimientos_ordenados):
                 mov = movimientos_ordenados[fila]
-                archivo_pdf = mov.get('archivo_path', '')
+                archivo_pdf = mov.get('archivo_path_pdf', '')  # ← ✅ CORRECTO
                 if archivo_pdf and os.path.exists(archivo_pdf):
                     return archivo_pdf
             return None
@@ -514,7 +514,8 @@ class HistorialDialog(QDialog):
             if fila < len(movimientos_ordenados):
                 mov = movimientos_ordenados[fila]
                 movimiento_id = mov.get('id')
-                archivo_pdf = mov.get('archivo_path', '')
+                # ✅ CORREGIDO: Buscar archivo_path_pdf
+                archivo_pdf = mov.get('archivo_path_pdf', '')  # ← SOLO PDF, NO DOCX
                 return movimiento_id, archivo_pdf
             return None, None
         except Exception as e:
@@ -624,6 +625,34 @@ class HistorialDialog(QDialog):
             
         except Exception as e:
             print(f"❌ Error actualizando fila sin PDF: {e}")
+            
+    def _resolver_ruta_pdf(self, ruta_almacenada):
+        """Resuelve una ruta de PDF (puede ser relativa o absoluta)"""
+        try:
+            from config.settings import get_config
+            
+            config = get_config()
+            
+            # Si ya es una ruta absoluta que existe
+            if os.path.exists(ruta_almacenada):
+                return ruta_almacenada
+            
+            # Si es solo un nombre de archivo, buscar en actas_local
+            if not os.path.dirname(ruta_almacenada):  # Solo nombre de archivo
+                ruta_local = os.path.join(config["actas_folder_local"], ruta_almacenada)
+                if os.path.exists(ruta_local):
+                    return ruta_local
+                
+                # Intentar en red también
+                ruta_red = os.path.join(config["actas_folder_red"], ruta_almacenada)
+                if os.path.exists(ruta_red):
+                    return ruta_red
+            
+            return ruta_almacenada  # Devolver original si no se resuelve
+            
+        except Exception as e:
+            print(f"❌ Error resolviendo ruta PDF: {e}")
+            return ruta_almacenada
 
 # Prueba simple
 if __name__ == "__main__":
