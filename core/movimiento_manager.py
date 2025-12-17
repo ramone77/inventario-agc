@@ -201,6 +201,77 @@ class MovimientoManager:
         """Obtiene todos los movimientos de un bien específico"""
         return self.db.obtener_movimientos_por_bien(bien_id)
     
+    def eliminar_movimiento_soft(self, movimiento_id, usuario_actual, motivo):
+        """
+        Elimina un movimiento con soft delete (marca como eliminado)
+        
+        Args:
+            movimiento_id: ID del movimiento a eliminar
+            usuario_actual: Diccionario con datos del usuario
+            motivo: String con el motivo de eliminación
+        
+        Returns:
+            tuple: (success, message)
+        """
+        try:
+            # 1. Verificar que el movimiento existe
+            movimiento = self.db.obtener_movimiento_por_id(movimiento_id)
+            if not movimiento:
+                return False, "Movimiento no encontrado"
+            
+            # 2. Verificar que no esté ya eliminado
+            if movimiento.get('eliminado') == 1:
+                return False, "Este movimiento ya está eliminado"
+            
+            # 3. Verificar permisos (solo admin puede eliminar)
+            if usuario_actual.get('rol') != 'admin':
+                return False, "Solo administradores pueden eliminar movimientos"
+            
+            # 4. Llamar al método de la base de datos
+            resultado = self.db.marcar_como_eliminado(movimiento_id, motivo, usuario_actual['id'])
+            
+            if resultado:
+                # 5. (OPCIONAL) Eliminar archivos DOCX si existen (solo el temporal)
+                # No eliminamos PDFs porque pueden ser actas firmadas
+                archivo_docx = movimiento.get('archivo_path_docx')
+                if archivo_docx and os.path.exists(archivo_docx):
+                    try:
+                        os.remove(archivo_docx)
+                        print(f"🗑️ Archivo DOCX temporal eliminado: {archivo_docx}")
+                    except Exception as e:
+                        print(f"⚠️ No se pudo eliminar DOCX: {e}")
+                
+                return True, f"Movimiento #{movimiento_id} eliminado correctamente"
+            else:
+                return False, "Error al marcar el movimiento como eliminado"
+                
+        except Exception as e:
+            print(f"❌ Error en eliminar_movimiento_soft: {e}")
+            return False, f"Error inesperado: {str(e)}"    
+    
+    def puede_eliminar_movimiento(self, movimiento_id, usuario_actual):
+        """
+        Verifica si un usuario puede eliminar un movimiento
+        
+        Returns:
+            tuple: (puede_eliminar, mensaje_error)
+        """
+        try:
+            movimiento = self.db.obtener_movimiento_por_id(movimiento_id)
+            if not movimiento:
+                return False, "Movimiento no encontrado"
+            
+            if movimiento.get('eliminado') == 1:
+                return False, "Movimiento ya eliminado"
+            
+            if usuario_actual.get('rol') != 'admin':
+                return False, "Solo administradores pueden eliminar movimientos"
+            
+            return True, ""
+            
+        except Exception as e:
+            return False, f"Error verificando permisos: {str(e)}"
+    
     def guardar_movimiento_completo(self, datos_formulario, bienes_ids, usuario_actual, archivo_pdf_path=None):
         """Guarda movimiento completo con generación automática de DOCX y PDF opcional"""
         try:

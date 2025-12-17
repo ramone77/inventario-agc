@@ -192,10 +192,13 @@ class DB:
                 observaciones TEXT,
                 archivo_path_docx TEXT,         
                 archivo_path_pdf TEXT,          
-                numero_transferencia TEXT
+                numero_transferencia TEXT,
+                eliminado INTEGER DEFAULT 0,
+                fecha_eliminacion TEXT,
+                motivo_eliminacion TEXT
             )
         """)
-        print("✅ Tabla 'movimientos' mejorada con campos para docx y pdf")
+        print("✅ Tabla 'movimientos' actualizada con campos de eliminación")
         
         # CUARTO: Verificar y agregar columnas nuevas a movimientos si es necesario
         self._agregar_columnas_movimientos()
@@ -233,28 +236,51 @@ class DB:
 
     def _agregar_columnas_movimientos(self):
         """Agrega columnas faltantes a la tabla movimientos de forma segura"""
-        cur = self.conn.cursor()
-        
-        # Lista de columnas nuevas para movimientos
-        columnas_nuevas = [
-            'responsable_nombre', 'responsable_apellido', 
-            'responsable_dni_cuit', 'responsable_institucional'
-        ]
-        
-        # Verificar qué columnas existen
-        cur.execute("PRAGMA table_info(movimientos)")
-        columnas_existentes = [col[1] for col in cur.fetchall()]
-        
-        # Agregar columnas faltantes
-        for columna in columnas_nuevas:
-            if columna not in columnas_existentes:
-                try:
-                    cur.execute(f"ALTER TABLE movimientos ADD COLUMN {columna} TEXT")
-                    print(f"✅ Columna '{columna}' agregada a movimientos")
-                except sqlite3.OperationalError as e:
-                    print(f"⚠️  No se pudo agregar columna '{columna}': {e}")
-        
-        cur.close()
+        try:
+            cur = self.conn.cursor()
+            
+            # Verificar qué columnas existen
+            cur.execute("PRAGMA table_info(movimientos)")
+            columnas_existentes = [col[1] for col in cur.fetchall()]
+            print(f"🔍 Columnas existentes en movimientos: {columnas_existentes}")
+            
+            # Lista de TODAS las columnas que deberían existir
+            columnas_necesarias = [
+                'responsable_nombre', 
+                'responsable_apellido', 
+                'responsable_dni_cuit', 
+                'responsable_institucional',
+                'eliminado',           # ← NUEVA
+                'fecha_eliminacion',   # ← NUEVA  
+                'motivo_eliminacion'   # ← NUEVA
+            ]
+            
+            # Agregar columnas faltantes
+            columnas_agregadas = []
+            for columna in columnas_necesarias:
+                if columna not in columnas_existentes:
+                    try:
+                        if columna == 'eliminado':
+                            cur.execute(f"ALTER TABLE movimientos ADD COLUMN {columna} INTEGER DEFAULT 0")
+                        else:
+                            cur.execute(f"ALTER TABLE movimientos ADD COLUMN {columna} TEXT")
+                        
+                        columnas_agregadas.append(columna)
+                        print(f"✅ Columna '{columna}' agregada a movimientos")
+                        
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ No se pudo agregar columna '{columna}': {e}")
+                else:
+                    print(f"✓ Columna '{columna}' ya existe")
+            
+            if columnas_agregadas:
+                self.conn.commit()
+                print(f"✅ Columnas agregadas exitosamente: {columnas_agregadas}")
+            
+            cur.close()
+            
+        except Exception as e:
+            print(f"❌ Error en _agregar_columnas_movimientos: {e}")
 
     def _actualizar_estructura_usuarios(self):
         """Actualiza la estructura de la tabla usuarios si es necesario"""
@@ -686,6 +712,39 @@ class DB:
             print(f"❌ Error al agregar movimiento: {e}")
             raise e
 
+    def marcar_como_eliminado(self, movimiento_id, motivo, usuario):
+        """Marca un movimiento como eliminado (soft delete)"""
+        try:
+            from datetime import datetime
+            
+            cur = self.conn.cursor()
+            fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            cur.execute("""
+                UPDATE movimientos 
+                SET eliminado = 1, 
+                    fecha_eliminacion = ?, 
+                    motivo_eliminacion = ?
+                WHERE id = ?
+            """, (fecha_actual, motivo, movimiento_id))
+            
+            self.conn.commit()
+            
+            # Registrar en logs
+            self.log_actividad(
+                usuario,
+                "ELIMINAR_MOVIMIENTO",
+                f"Movimiento #{movimiento_id} marcado como eliminado. Motivo: {motivo}"
+            )
+            
+            cur.close()
+            print(f"✅ Movimiento #{movimiento_id} marcado como eliminado")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error marcando movimiento como eliminado: {e}")
+            return False
+
     def list_movimientos(self):
         """Obtiene todos los movimientos"""
         cur = self.conn.cursor()
@@ -698,26 +757,60 @@ class DB:
         finally:
             cur.close()
 
-    def get_movimientos_detallados(self):
+    def get_movimientos_detallados(self, incluir_eliminados=False):
         """Obtiene movimientos con información detallada de bienes"""
+        cur = self.conn.cursor()
+        try:
+            # Construir WHERE según parámetro
+            if incluir_eliminados:
+                where_clause = ""
+            else:
+                where_clause = "WHERE m.eliminado = 0"
+            
+            query = f"""
+            SELECT m.*, 
+                COUNT(bm.id_bien) as cantidad_bienes,
+                GROUP_CONCAT(b.ficha) as fichas,
+                GROUP_CONCAT(DISTINCT b.prd) as prds
+            FROM movimientos m
+            LEFT JOIN bienes_movimientos bm ON m.id = bm.id_movimiento
+            LEFT JOIN bienes b ON bm.id_bien = b.id
+            {where_clause}
+            GROUP BY m.id
+            ORDER BY m.fecha DESC
+            """
+            
+            print(f"🔍 Query movimientos: incluir_eliminados={incluir_eliminados}")
+            cur.execute(query)
+            return cur.fetchall()
+            
+        except Exception as e:
+            print(f"Error al obtener movimientos detallados: {e}")
+            return self.list_movimientos()  # Fallback
+        finally:
+            cur.close()
+            
+    def obtener_movimientos_eliminados(self):
+        """Obtiene solo los movimientos eliminados"""
         cur = self.conn.cursor()
         try:
             query = """
             SELECT m.*, 
-                   COUNT(bm.id_bien) as cantidad_bienes,
-                   GROUP_CONCAT(b.ficha) as fichas,
-                   GROUP_CONCAT(DISTINCT b.prd) as prds
+                COUNT(bm.id_bien) as cantidad_bienes,
+                GROUP_CONCAT(b.ficha) as fichas
             FROM movimientos m
             LEFT JOIN bienes_movimientos bm ON m.id = bm.id_movimiento
             LEFT JOIN bienes b ON bm.id_bien = b.id
+            WHERE m.eliminado = 1
             GROUP BY m.id
-            ORDER BY m.fecha DESC
+            ORDER BY m.fecha_eliminacion DESC
             """
+            
             cur.execute(query)
             return cur.fetchall()
         except Exception as e:
-            print(f"Error al obtener movimientos detallados: {e}")
-            return self.list_movimientos()  # Fallback a la función básica
+            print(f"❌ Error obteniendo movimientos eliminados: {e}")
+            return []
         finally:
             cur.close()
 

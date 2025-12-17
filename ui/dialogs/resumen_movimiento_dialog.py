@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdi
                              QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget, QProgressBar)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QDesktopServices, QFont, QColor, QTextOption
+from .eliminar_movimiento_dialog import EliminarMovimientoDialog  # ← NUEVO
 import os
 import datetime
 
@@ -15,13 +16,14 @@ import datetime
 class ResumenMovimientoDialog(QDialog):
     """Diálogo profesional para mostrar resumen COMPLETO de movimiento"""
     
-    def __init__(self, movimiento, bienes_movimiento, parent=None):
+    def __init__(self, movimiento, bienes_movimiento, usuario_actual=None, parent=None):
         super().__init__(parent)
         self.movimiento = movimiento
         self.bienes_movimiento = bienes_movimiento
+        self.usuario_actual = usuario_actual or {}  # Por si acaso
         self.parent = parent
         
-        # 📐 TAMAÑOS OPTIMIZADOS
+        # 📐 TAMAÑOS OPTIMIZADOS (el resto igual)
         total_bienes = len(bienes_movimiento)
         
         # Altura base según cantidad de bienes
@@ -90,6 +92,7 @@ class ResumenMovimientoDialog(QDialog):
         self._crear_seccion_acta_firmada(layout)
         
         # === BOTONES DE ACCIÓN ===
+        self._crear_seccion_eliminacion(layout)
         self._crear_botones_accion(layout)
     
     def _crear_encabezado(self, layout):
@@ -634,9 +637,174 @@ class ResumenMovimientoDialog(QDialog):
             acta_layout.addWidget(btn_subir, alignment=Qt.AlignCenter)
         
         layout.addWidget(acta_widget)
+        
+    def _crear_seccion_eliminacion(self, layout):
+        """Crea sección para eliminar movimiento (solo admin)"""
+        try:
+            # Verificar si el usuario puede eliminar
+            if not self.usuario_actual or self.usuario_actual.get('rol') != 'admin':
+                return  # Solo admin puede ver esta sección
+            
+            # Verificar si ya está eliminado
+            if self.movimiento.get('eliminado') == 1:
+                eliminacion_widget = QWidget()
+                eliminacion_widget.setStyleSheet("""
+                    QWidget {
+                        background-color: #f8f9fa;
+                        border: 2px solid #dc3545;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-top: 10px;
+                    }
+                """)
+                
+                eliminacion_layout = QVBoxLayout(eliminacion_widget)
+                
+                # Título
+                titulo = QLabel("🗑️ MOVIMIENTO ELIMINADO")
+                titulo.setStyleSheet("""
+                    QLabel {
+                        color: #dc3545;
+                        font-size: 14px;
+                        font-weight: bold;
+                        margin-bottom: 5px;
+                    }
+                """)
+                
+                # Información de eliminación
+                fecha_eliminacion = self.movimiento.get('fecha_eliminacion', 'Fecha desconocida')
+                motivo = self.movimiento.get('motivo_eliminacion', 'Sin motivo especificado')
+                
+                info_text = f"""
+                ⚠️ Este movimiento fue eliminado el {fecha_eliminacion}.<br>
+                <b>Motivo:</b> {motivo}
+                """
+                
+                info_label = QLabel(info_text)
+                info_label.setStyleSheet("color: #6c757d;")
+                info_label.setWordWrap(True)
+                
+                eliminacion_layout.addWidget(titulo)
+                eliminacion_layout.addWidget(info_label)
+                
+                layout.addWidget(eliminacion_widget)
+                return
+            
+            # Si NO está eliminado y es admin → mostrar botón para eliminar
+            eliminacion_widget = QWidget()
+            eliminacion_widget.setStyleSheet("""
+                QWidget {
+                    background-color: #fff3cd;
+                    border: 2px solid #ffeaa7;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-top: 10px;
+                }
+            """)
+            
+            eliminacion_layout = QVBoxLayout(eliminacion_widget)
+            
+            # Título
+            titulo = QLabel("🛠️ GESTIÓN ADMINISTRATIVA")
+            titulo.setStyleSheet("""
+                QLabel {
+                    color: #856404;
+                    font-size: 14px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                }
+            """)
+            
+            # Botón para eliminar
+            btn_eliminar = QPushButton("🗑️ Eliminar este movimiento")
+            btn_eliminar.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    border: none;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
+                QPushButton:pressed {
+                    background-color: #bd2130;
+                }
+            """)
+            btn_eliminar.clicked.connect(self._eliminar_movimiento)
+            
+            # Información adicional
+            info_label = QLabel(
+                "⚠️ Solo administradores. El movimiento se marcará como 'eliminado' "
+                "pero permanecerá en la base de datos para auditoría."
+            )
+            info_label.setStyleSheet("color: #856404; font-size: 11px; margin-top: 8px;")
+            info_label.setWordWrap(True)
+            
+            eliminacion_layout.addWidget(titulo)
+            eliminacion_layout.addWidget(btn_eliminar)
+            eliminacion_layout.addWidget(info_label)
+            
+            layout.addWidget(eliminacion_widget)
+            
+        except Exception as e:
+            print(f"⚠️ Error creando sección eliminación: {e}")
+            
+    def _eliminar_movimiento(self):
+        """Maneja la eliminación del movimiento"""
+        try:
+            # Verificar permisos nuevamente (por seguridad)
+            if not self.usuario_actual or self.usuario_actual.get('rol') != 'admin':
+                QMessageBox.warning(self, "Permisos insuficientes",
+                                "Solo administradores pueden eliminar movimientos.")
+                return
+            
+            # Verificar que no esté ya eliminado
+            if self.movimiento.get('eliminado') == 1:
+                QMessageBox.information(self, "Ya eliminado",
+                                    "Este movimiento ya está eliminado.")
+                return
+            
+            # Abrir diálogo de confirmación
+            dialog = EliminarMovimientoDialog(self.movimiento, self)
+            if dialog.exec_() == QDialog.Accepted:
+                motivo = dialog.motivo
+                
+                # Importar movimiento_manager
+                from core.movimiento_manager import MovimientoManager
+                
+                # Crear instancia del manager
+                movimiento_manager = MovimientoManager(self.parent.db)
+                
+                # Llamar al método de eliminación
+                success, message = movimiento_manager.eliminar_movimiento_soft(
+                    self.movimiento['id'],
+                    self.usuario_actual,
+                    motivo
+                )
+                
+                if success:
+                    QMessageBox.information(self, "✅ Éxito", message)
+                    
+                    # Cerrar este diálogo y notificar al parent
+                    self.accept()
+                    
+                    # Si el parent es VentanaPrincipal, recargar movimientos
+                    if self.parent and hasattr(self.parent, 'cargar_movimientos'):
+                        self.parent.cargar_movimientos()
+                else:
+                    QMessageBox.critical(self, "❌ Error", message)
+                    
+        except Exception as e:
+            print(f"❌ Error en _eliminar_movimiento: {e}")
+            QMessageBox.critical(self, "Error", 
+                            f"No se pudo eliminar el movimiento:\n{str(e)}")
     
     def _crear_botones_accion(self, layout):
-        """Crea botones de acción en la parte inferior"""
+        """Crea botones de acción en la parte inferior - VERSIÓN COMPLETA"""
         botones_layout = QHBoxLayout()
         
         # Botón para historial de bien seleccionado

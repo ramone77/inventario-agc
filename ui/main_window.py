@@ -870,6 +870,30 @@ class VentanaPrincipal(QMainWindow):
 
         layout.addLayout(filtros_rapidos_layout)
         
+        # ===== CHECKBOX PARA MOSTRAR ELIMINADOS (solo admin) =====
+        if self.usuario_actual['rol'] == 'admin':
+            admin_layout = QHBoxLayout()
+            
+            self.checkbox_mostrar_eliminados = QCheckBox("🗑️ Mostrar movimientos eliminados")
+            self.checkbox_mostrar_eliminados.setStyleSheet("""
+                QCheckBox {
+                    color: #dc3545;
+                    font-weight: bold;
+                    padding: 5px;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                }
+            """)
+            self.checkbox_mostrar_eliminados.setToolTip("Solo administradores pueden ver movimientos eliminados")
+            self.checkbox_mostrar_eliminados.stateChanged.connect(self._toggle_mostrar_eliminados)
+            
+            admin_layout.addWidget(self.checkbox_mostrar_eliminados)
+            admin_layout.addStretch()
+            
+            layout.addLayout(admin_layout)
+        
         # Etiqueta de columnas activas
         self.label_columnas_mov_activas = QLabel("Columnas visibles: Tipo, Fecha Entrega, N° Transferencia, Responsable, Cantidad Bienes, PRD, PDF")
         self.label_columnas_mov_activas.setStyleSheet("color: #2E86AB; font-size: 11px; padding: 2px;")
@@ -1215,10 +1239,11 @@ class VentanaPrincipal(QMainWindow):
 
     # ========== MÉTODOS DE MOVIMIENTOS ==========
 
-    def cargar_movimientos(self):
+    def cargar_movimientos(self, mostrar_eliminados=False):
         """Carga movimientos con diseño optimizado - SIN COLUMNA ACCIONES"""
         try:
-            movimientos = self.db.get_movimientos_detallados()
+            # Pasar parámetro mostrar_eliminados a la BD
+            movimientos = self.db.get_movimientos_detallados(incluir_eliminados=mostrar_eliminados)
                 
             self.tabla_movimientos.setRowCount(len(movimientos))
             
@@ -2672,7 +2697,7 @@ class VentanaPrincipal(QMainWindow):
             
             # Abrir diálogo de resumen completo
             from ui.dialogs.resumen_movimiento_dialog import ResumenMovimientoDialog
-            dialog = ResumenMovimientoDialog(movimiento, bienes_movimiento, self)
+            dialog = ResumenMovimientoDialog(movimiento, bienes_movimiento, self.usuario_actual, self)
             dialog.exec_()
             
             # ✅ FEEDBACK FINAL
@@ -2842,6 +2867,20 @@ class VentanaPrincipal(QMainWindow):
         except Exception as e:
             print(f"❌ Error abriendo acta: {e}")
             QMessageBox.critical(self, "Error", f"No se pudo abrir el acta:\n{str(e)}")
+            
+    def _toggle_mostrar_eliminados(self, state):
+        """Muestra/oculta movimientos eliminados según el checkbox"""
+        try:
+            mostrar = (state == Qt.Checked)
+            self.cargar_movimientos(mostrar_eliminados=mostrar)
+            
+            if mostrar:
+                self.status_bar.showMessage("✅ Mostrando movimientos eliminados", 3000)
+            else:
+                self.status_bar.showMessage("✅ Mostrando solo movimientos activos", 3000)
+                
+        except Exception as e:
+            print(f"❌ Error al mostrar eliminados: {e}")
             
     def _aplicar_ajustes_tabla_movimientos_optimizada(self):
         """Ajustes optimizados para tabla SIN columna Acciones - MÉTODO NUEVO"""
